@@ -90,6 +90,14 @@ async function isAdmin(request, env) {
   return b64url(a) === b64url(b);
 }
 
+async function validQueueKey(request, env) {
+  if (!env.QUEUE_KEY) return true; // no secret set -> open access
+  const k = request.headers.get('x-queue-key') || '';
+  const a = await crypto.subtle.digest('SHA-256', enc.encode(k));
+  const b = await crypto.subtle.digest('SHA-256', enc.encode(env.QUEUE_KEY));
+  return b64url(a) === b64url(b);
+}
+
 class HttpError extends Error {
   constructor(status, msg) { super(msg); this.status = status; }
 }
@@ -421,11 +429,15 @@ async function handleApi(request, env, url) {
       PARTY_SELECT + ` WHERE p.status IN ('playing', 'waiting')
                        ORDER BY CASE p.status WHEN 'playing' THEN 0 ELSE 1 END, p.position`
     ).all();
-    return json({ parties: results.map(shapeParty), mode: eff.mode, override: eff.override, schedule: eff.schedule });
+    return json({ parties: results.map(shapeParty), mode: eff.mode, override: eff.override, schedule: eff.schedule,
+      key_required: !!env.QUEUE_KEY, key_valid: await validQueueKey(request, env) });
   }
 
   if (pathname === '/api/queue/join' && method === 'POST') {
     const user = await requireUser(request, env);
+    if (!(await validQueueKey(request, env))) {
+      return bad('scan the table QR code to join the queue', 403);
+    }
     const eff = await effectiveMode(env.DB, env);
     if (eff.mode === 'offline') return bad('queue is offline right now', 403);
     const body = await request.json().catch(() => null);
@@ -713,6 +725,11 @@ async function handleApi(request, env, url) {
        ORDER BY a.id DESC LIMIT 200`
     ).all();
     return json({ audit: results });
+  }
+
+  if (pathname === '/api/admin/queue-key' && method === 'GET') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    return json({ key: env.QUEUE_KEY || null });
   }
 
   if (pathname === '/api/admin/players' && method === 'GET') {
