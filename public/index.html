@@ -158,6 +158,8 @@
   }
   .adm-wrap .sched-grid{max-width:480px}
   #adm-pending{display:flex;flex-direction:column;gap:8px}
+  .adm-sub-h{font-size:.7rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--danger);margin-top:6px}
+  .pend.disputed{border-color:var(--danger)}
   .qr-note{margin:0;text-align:center;color:var(--warn);font-size:.85rem;font-weight:700}
   .adm-qr{display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px;
     background:#fff;border-radius:16px;max-width:320px}
@@ -1583,6 +1585,21 @@ const Hub = (() => {
         tr.append(t1, t2);
         tr.append(el('td', null, 'Team ' + m.winner_team));
         tr.append(el('td', null, m.rating_delta != null ? (m.rating_delta > 0 ? '+' : '') + m.rating_delta : '—'));
+        if (adminPin) { // inline admin tools on committed history
+          const cell = el('td', 'act-cell');
+          cell.append(actBtn('⇄', async () => {
+            const to = m.winner_team === 1 ? 2 : 1;
+            if (!confirm('Flip match #' + m.id + ' winner to Team ' + to + '? All ratings & W-L are recomputed from history.')) return;
+            await api('/admin/matches/' + m.id, { method: 'PUT', body: { winner_team: to } });
+            refreshHistory();
+          }, 'Flip winner'));
+          cell.append(actBtn('✕', async () => {
+            if (!confirm('Delete match #' + m.id + ' from history? All ratings & W-L are recomputed as if it never happened.')) return;
+            await api('/admin/matches/' + m.id, { method: 'DELETE' });
+            refreshHistory(); refreshAll();
+          }, 'Delete match'));
+          tr.append(cell);
+        }
         tbody.append(tr);
       });
       t.append(thead, tbody);
@@ -1724,24 +1741,40 @@ const Hub = (() => {
         b.classList.toggle('on', active);
       });
 
-      // pending & disputed
+      // pending & disputed (disputed flagged first, both get approve/reject)
       const pend = $('#adm-pending');
       pend.innerHTML = '';
       try {
         const { admin } = await api('/notifications');
-        if (!admin || !admin.length) pend.append(el('div', 'fine', 'No pending matches.'));
-        (admin || []).forEach(n => {
-          const card = el('div', 'pend');
+        const all = admin || [];
+        if (!all.length) pend.append(el('div', 'fine', 'No pending or disputed matches.'));
+        const mkCard = n => {
+          const card = el('div', 'pend' + (n.status === 'disputed' ? ' disputed' : ''));
           card.append(el('div', null,
-            `#${n.id} ${n.match_type} ${n.format} — Team ${n.winner_team} won · ${n.unconfirmed} unconfirmed${n.status === 'disputed' ? ' · DISPUTED' : ''}`));
+            `#${n.id} ${n.match_type} ${n.format} — Team ${n.winner_team} won · ${n.unconfirmed} unconfirmed${n.status === 'disputed' ? ' · ⚠ DISPUTED' : ''}`));
           const btns = el('div', 'btns');
-          btns.append(actBtn('⚡ Force approve', async () => {
+          btns.append(actBtn('⚡ Approve', async () => {
             await api('/matches/' + n.id + '/admin-approve', { method: 'POST' });
+            refreshAll(); refresh(); refreshHistory();
+          }));
+          btns.append(actBtn('✕ Reject', async () => {
+            if (!confirm('Reject match #' + n.id + '? It will be discarded.')) return;
+            await api('/admin/matches/' + n.id + '/reject', { method: 'POST' });
             refreshAll(); refresh();
           }));
           card.append(btns);
-          pend.append(card);
-        });
+          return card;
+        };
+        const disputed = all.filter(n => n.status === 'disputed');
+        const pending = all.filter(n => n.status !== 'disputed');
+        if (disputed.length) {
+          pend.append(el('div', 'adm-sub-h', '⚠ Disputed — needs a ruling'));
+          disputed.forEach(n => pend.append(mkCard(n)));
+        }
+        if (pending.length) {
+          pend.append(el('div', 'adm-sub-h', 'Awaiting confirmations'));
+          pending.forEach(n => pend.append(mkCard(n)));
+        }
       } catch { pend.append(el('div', 'fine', 'Admin pin required.')); }
 
       // queue access QR (lazy-loads a local-generation QR lib from CDN — key never leaves the browser)
