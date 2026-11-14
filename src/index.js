@@ -219,6 +219,61 @@ async function audit(db, type, actorUserId, detail = '') {
 
 /* ============================ match commit ============================ */
 
+/* Recompute EVERY player's Glicko-2 + W/L from the full remaining match history.
+   Used after admin deletes/edits a committed match: resets all players to
+   defaults and replays every match in played_at order, so the changed match's
+   gains/losses vanish exactly as if it never happened. */
+async function replayAllRatings(db) {
+  const users = (await db.prepare('SELECT id FROM users ORDER BY id LIMIT 500').all()).results;
+  const state = new Map(); // id -> {rating, rd, vol, rw, rl, cw, cl, last}
+  for (const u of users) {
+    state.set(u.id, { rating: 1500, rd: 350, vol: 0.06, rw: 0, rl: 0, cw: 0, cl: 0, last: null });
+  }
+  const matches = (await db.prepare(
+    'SELECT id, match_type, winner_team, played_at FROM matches ORDER BY played_at, id LIMIT 2000').all()).results;
+  const players = (await db.prepare(
+    'SELECT match_id, team, user_id FROM match_players WHERE user_id IS NOT NULL').all()).results;
+  const byMatch = new Map();
+  for (const p of players) {
+    if (!byMatch.has(p.match_id)) byMatch.set(p.match_id, []);
+    byMatch.get(p.match_id).push(p);
+  }
+  const avg = arr => ({
+    rating: arr.reduce((s, x) => s + x.rating, 0) / (arr.length || 1),
+    rd: arr.reduce((s, x) => s + x.rd, 0) / (arr.length || 1),
+  });
+  for (const m of matches) {
+    const ps = byMatch.get(m.id) || [];
+    const t1 = ps.filter(p => p.team === 1).map(p => state.get(p.user_id)).filter(Boolean);
+    const t2 = ps.filter(p => p.team === 2).map(p => state.get(p.user_id)).filter(Boolean);
+    for (const p of ps) {
+      const st = state.get(p.user_id);
+      if (!st) continue;
+      const won = p.team === m.winner_team ? 1 : 0;
+      st.last = m.played_at;
+      if (m.match_type === 'ranked') {
+        const opp = p.team === 1 ? avg(t2) : avg(t1);
+        const after = rate(st, [{ rating: opp.rating, rd: opp.rd, score: won }]);
+        st.rating = after.rating; st.rd = after.rd; st.vol = after.vol;
+        won ? st.rw++ : st.rl++;
+      } else {
+        won ? st.cw++ : st.cl++;
+      }
+    }
+  }
+  const stmts = [];
+  for (const [id, st] of state) {
+    stmts.push(db.prepare(
+      `UPDATE users SET glicko_rating = ?, glicko_rd = ?, glicko_vol = ?,
+       ranked_wins = ?, ranked_losses = ?, casual_wins = ?, casual_losses = ?,
+       last_played_at = ? WHERE id = ?`
+    ).bind(Math.round(st.rating * 10) / 10, Math.round(st.rd * 10) / 10,
+      Math.round(st.vol * 10000) / 10000,
+      st.rw, st.rl, st.cw, st.cl, st.last, id));
+  }
+  if (stmts.length) await db.batch(stmts);
+}
+
 async function commitMatch(db, pending) {
   const players = (await db.prepare(
     'SELECT * FROM pending_match_players WHERE pending_match_id = ?').bind(pending.id).all()).results;
@@ -289,6 +344,9 @@ async function handleApi(request, env, url) {
 
   /* ---------- auth ---------- */
   if (pathname === '/api/auth/register' && method === 'POST') {
+    if (!(await validQueueKey(request, env))) {
+      return bad('scan the table QR code to sign up', 403);
+    }
     const body = await request.json().catch(() => null);
     const username = String(body?.username || '').trim().toLowerCase();
     const nickname = String(body?.nickname || '').trim();
@@ -730,6 +788,51 @@ async function handleApi(request, env, url) {
   if (pathname === '/api/admin/queue-key' && method === 'GET') {
     if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
     return json({ key: env.QUEUE_KEY || null });
+  }
+
+  /* ---------- admin: edit / delete committed matches, reject pending ---------- */
+  m = pathname.match(/^\/api\/admin\/matches\/(\d+)$/);
+  if (m && method === 'PUT') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    const id = Number(m[1]);
+    const row = await env.DB.prepare('SELECT * FROM matches WHERE id = ?').bind(id).first();
+    if (!row) return bad('not found', 404);
+    const body = await request.json().catch(() => null);
+    const winner = body?.winner_team != null ? Number(body.winner_team) : row.winner_team;
+    const type = body?.match_type != null ? body.match_type : row.match_type;
+    if (![1, 2].includes(winner)) return bad('winner_team must be 1 or 2');
+    if (!['ranked', 'casual'].includes(type)) return bad('match_type must be ranked or casual');
+    await env.DB.prepare('UPDATE matches SET winner_team = ?, match_type = ? WHERE id = ?')
+      .bind(winner, type, id).run();
+    await replayAllRatings(env.DB); // ratings/W-L recomputed from full history
+    await audit(env.DB, 'admin_match_edit', null,
+      'match=' + id + ' winner ' + row.winner_team + '->' + winner + (type !== row.match_type ? ' type->' + type : '') + ' · ratings replayed');
+    return json({ ok: true, id, winner_team: winner, match_type: type });
+  }
+
+  if (m && method === 'DELETE') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    const id = Number(m[1]);
+    const { meta } = await env.DB.prepare('DELETE FROM matches WHERE id = ?').bind(id).run();
+    if (!meta.changes) return bad('not found', 404);
+    await env.DB.prepare('DELETE FROM match_players WHERE match_id = ?').bind(id).run();
+    await replayAllRatings(env.DB); // undo the match's rating/W-L effects exactly
+    await audit(env.DB, 'admin_match_delete', null, 'match=' + id + ' removed · ratings replayed');
+    return json({ ok: true, id });
+  }
+
+  m = pathname.match(/^\/api\/admin\/matches\/(\d+)\/reject$/);
+  if (m && method === 'POST') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    const id = Number(m[1]);
+    const pending = await env.DB.prepare('SELECT * FROM pending_matches WHERE id = ?').bind(id).first();
+    if (!pending || !['pending', 'disputed'].includes(pending.status)) return bad('not found', 404);
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM pending_match_players WHERE pending_match_id = ?').bind(id),
+      env.DB.prepare('DELETE FROM pending_matches WHERE id = ?').bind(id),
+    ]);
+    await audit(env.DB, 'admin_match_reject', null, 'pending=' + id + ' rejected' + (pending.status === 'disputed' ? ' (was disputed)' : ''));
+    return json({ ok: true, id, rejected: true });
   }
 
   if (pathname === '/api/admin/players' && method === 'GET') {
