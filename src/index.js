@@ -344,9 +344,7 @@ async function handleApi(request, env, url) {
 
   /* ---------- auth ---------- */
   if (pathname === '/api/auth/register' && method === 'POST') {
-    if (!(await validQueueKey(request, env))) {
-      return bad('scan the table QR code to sign up', 403);
-    }
+    // accounts are NOT gated by QUEUE_KEY — only joining the queue is
     const body = await request.json().catch(() => null);
     const username = String(body?.username || '').trim().toLowerCase();
     const nickname = String(body?.nickname || '').trim();

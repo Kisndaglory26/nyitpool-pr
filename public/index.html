@@ -71,6 +71,7 @@
     display:inline-flex;align-items:center;justify-content:center;gap:10px;
   }
   .btn-primary:hover{filter:brightness(1.08)}
+  .btn-primary:disabled{opacity:.35;cursor:default;box-shadow:none;filter:none;transform:none}
   .btn-primary:active{transform:scale(.98)}
   .btn-primary kbd{border-color:#0a4a44;color:#04211e;background:rgba(255,255,255,.25)}
   .btn-primary.big{font-size:1.15rem;padding:16px 28px}
@@ -1316,10 +1317,11 @@ const Hub = (() => {
     const joinBtn = $('#hub-join .btn-primary');
     soloBtn.disabled = qMode.mode === 'duo-only' || (qKey.required && !qKey.valid);
     joinBtn.disabled = qMode.mode === 'offline' || (qKey.required && !qKey.valid);
+    // QUEUE_KEY gates JOINING only — sign in / sign up stay open
+    const locked = qKey.required && !qKey.valid;
     const note = document.getElementById('qr-note');
-    note.hidden = !(qKey.required && !qKey.valid);
-    if (!note.hidden) note.textContent = '📲 Scan the table QR code to sign up & join (expires 15 min after scan).';
-    document.getElementById('gate-go').disabled = qKey.required && !qKey.valid;
+    note.hidden = !locked;
+    if (locked) note.textContent = '📲 Scan the table QR code to join the queue (key lasts 15 min after scanning).';
     $('#join-mate').disabled = $('#join-guest').disabled = joinBtn.disabled;
     const wantSolo = segVal($('#join-format')) === 'solo';
     $('#join-mate').hidden = wantSolo;
