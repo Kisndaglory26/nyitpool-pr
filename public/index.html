@@ -549,6 +549,17 @@
     flex-wrap:wrap;
   }
   .actionbar .btn-primary,.actionbar .btn-secondary{flex:1 1 220px;max-width:420px;min-height:62px;font-size:1.05rem}
+  .actionbar .btn-secondary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  .actionbar .btn-ext{border-color:var(--warn);color:var(--warn)}
+  .actionbar .btn-ext:disabled{border-color:#2a3a50;color:var(--muted)}
+  .actionbar .shot-only[hidden]{display:none}
+  /* per-team extension badge (shot mode) */
+  .panel .ext{
+    font-size:.68rem;font-weight:800;letter-spacing:.14em;color:var(--warn);
+    border:1px dashed var(--warn);border-radius:999px;padding:3px 10px;
+  }
+  .panel .ext.used{color:var(--muted);border-color:var(--line);text-decoration:line-through}
+  .panel .ext[hidden]{display:none}
   .op-hint{
     text-align:center;font-size:.78rem;color:var(--muted);padding:0 14px 6px;line-height:1.8;
   }
@@ -928,6 +939,7 @@
         <div class="roster"></div>
         <span class="time">0:00</span>
         <div class="bar"><div class="fill"></div></div>
+        <span class="ext" hidden>EXT READY</span>
       </div>
       <div class="panel" id="panel-1" style="--tc:var(--t2)">
         <span class="chip">WAITING</span>
@@ -935,6 +947,7 @@
         <div class="roster"></div>
         <span class="time">0:00</span>
         <div class="bar"><div class="fill"></div></div>
+        <span class="ext" hidden>EXT READY</span>
       </div>
       <div id="prestart-hint">Press SPACE — or tap PASS — to start</div>
     </div>
@@ -942,6 +955,8 @@
     <div class="actionbar">
       <button id="btn-pass" class="btn-primary" type="button"><span class="bl">START MATCH</span><kbd>SPACE</kbd></button>
       <button id="btn-shot-reset" class="btn-secondary" type="button"><span class="bl">RESET SHOT</span><kbd>ENTER</kbd></button>
+      <button id="btn-ext" class="btn-secondary btn-ext shot-only" type="button" hidden><span class="bl">+30s EXTENSION</span><kbd>E</kbd></button>
+      <button id="btn-new-rack" class="btn-secondary shot-only" type="button" hidden><span class="bl">NEW RACK</span><kbd>N</kbd></button>
     </div>
   </section>
 
@@ -1046,7 +1061,10 @@ const app = { screen: 'home', mode: null };           // mode: 'shot' | 'game'
 const match = {
   active: 0, running: false, started: false, over: false, violPause: false,
   dur: [0, 0], remaining: [0, 0], seg: [0, 0], endAt: 0, winner: null, lastBeepSec: null,
+  extUsed: [false, false], // shot mode: one extension per team per rack
 };
+/* shot-clock extension length (pro events: 30s; WPA recommends 25s) */
+const EXT_SEC = 30;
 let rafId = 0;
 
 const durMsFor = i => (app.mode === 'shot' ? settings.shot[i] * 1000 : settings.game[i] * 60000);
@@ -2307,6 +2325,8 @@ function renderRules() {
       step(3, 'All balls stopped?' +
         '<span class="sub">• Missed — <kbd>SPACE</kbd> passes the turn.</span>' +
         '<span class="sub">• Scored — <kbd>ENTER</kbd> resets the clock; same shooter continues.</span>'),
+      step(4, `Need more time? <kbd>E</kbd> adds ${EXT_SEC}s — one extension per team per rack.` +
+        '<span class="sub">• Rack over? <kbd>N</kbd> starts a new rack and restores both extensions.</span>'),
     );
   } else {
     list.append(
@@ -2341,6 +2361,7 @@ function initMatch() {
   match.violPause = false;
   match.winner = null;
   match.lastBeepSec = null;
+  match.extUsed = [false, false];
   hideOverlay();
   hideBanner();
   pauseGlowClear();
@@ -2455,6 +2476,36 @@ function actionResetShot() {
   renderAll();
 }
 
+/* E — shot mode: the shooter's one extension this rack adds EXT_SEC to the current shot.
+   Works while running or paused (doesn't change pause state). ENTER/SPACE afterwards
+   give a normal fresh clock, so the extra time only applies to this shot. */
+function actionExtension() {
+  if (app.mode !== 'shot' || match.over || !match.started) return;
+  const i = match.active;
+  if (match.extUsed[i]) {
+    showBanner(`${settings.names[i]} already used their extension this rack.`);
+    return;
+  }
+  snapshotActive();
+  match.extUsed[i] = true;
+  match.remaining[i] += EXT_SEC * 1000;
+  if (match.running) runActive(); // recompute endAt with the added time
+  match.lastBeepSec = null;
+  Sound.resetShot();
+  flashPanel(i);
+  showBanner(`Extension — ${settings.names[i]} +${EXT_SEC}s`);
+  renderAll();
+}
+
+/* N — shot mode: new rack restores both teams' extensions (clock itself is untouched) */
+function actionNewRack() {
+  if (app.mode !== 'shot' || match.over || !match.started) return;
+  match.extUsed = [false, false];
+  Sound.switchTurn();
+  showBanner('New rack — extensions restored for both teams.');
+  renderAll();
+}
+
 function actionPauseToggle() {
   if (match.over || !match.started) return;
   if (match.running) {
@@ -2538,6 +2589,8 @@ twoStep($('#btn-exit'),  () => showScreen('home'));
 $('#btn-pause').addEventListener('click', actionPauseToggle);
 $('#btn-pass').addEventListener('click', () => { Sound.ensure(); actionPass(); });
 $('#btn-shot-reset').addEventListener('click', () => { Sound.ensure(); actionResetShot(); });
+$('#btn-ext').addEventListener('click', () => { Sound.ensure(); actionExtension(); });
+$('#btn-new-rack').addEventListener('click', () => { Sound.ensure(); actionNewRack(); });
 
 /* hand the clock to team i WITHOUT resuming — for correcting turns while paused */
 function switchPaused(i) {
@@ -2606,10 +2659,21 @@ function renderAll() {
     const r = $('.roster', p);
     r.textContent = players.join(' · ');
     r.title = players.join(', ');
+    const ext = $('.ext', p);
+    ext.hidden = app.mode !== 'shot';
+    ext.classList.toggle('used', match.extUsed[i]);
+    ext.textContent = match.extUsed[i] ? 'EXT USED' : 'EXT READY';
   });
+
+  // extension + new-rack controls (shot mode only)
+  const shot = app.mode === 'shot';
+  $$('.shot-only').forEach(b => { b.hidden = !shot; });
+  $('.bl', $('#btn-ext')).textContent = `+${EXT_SEC}s EXTENSION`;
+  $('#btn-ext').disabled = !match.started || match.over || match.extUsed[match.active];
+  $('#btn-new-rack').disabled = !match.started || match.over;
   $('#timer-mode-badge').textContent = app.mode === 'shot' ? 'SHOT TIMER' : 'GAME TIMER';
   $('#timer-hints').innerHTML = app.mode === 'shot'
-    ? '<kbd>SPACE</kbd> pass turn&nbsp;·&nbsp;<kbd>ENTER</kbd> reset shot&nbsp;·&nbsp;<kbd>P</kbd> pause'
+    ? '<kbd>SPACE</kbd> pass turn&nbsp;·&nbsp;<kbd>ENTER</kbd> reset shot&nbsp;·&nbsp;<kbd>E</kbd> extension&nbsp;·&nbsp;<kbd>N</kbd> new rack&nbsp;·&nbsp;<kbd>P</kbd> pause'
     : '<kbd>SPACE</kbd> switch clock&nbsp;·&nbsp;<kbd>ENTER</kbd> reset turn&nbsp;·&nbsp;<kbd>P</kbd> pause';
 
   // designated clock-operator reminder — both modes; solo sides put the opponent (or a spectator) on the desk
@@ -2664,6 +2728,8 @@ document.addEventListener('keydown', (e) => {
     if (k === ' ') { e.preventDefault(); Sound.ensure(); actionPass(); }
     else if (k === 'Enter') { e.preventDefault(); Sound.ensure(); actionResetShot(); }
     else if (k === 'p' || k === 'P') { e.preventDefault(); Sound.ensure(); actionPauseToggle(); }
+    else if (k === 'e' || k === 'E') { e.preventDefault(); Sound.ensure(); actionExtension(); }
+    else if (k === 'n' || k === 'N') { e.preventDefault(); Sound.ensure(); actionNewRack(); }
   }
 });
 
