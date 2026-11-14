@@ -1006,16 +1006,19 @@ $('#btn-mode-game').addEventListener('click', () => { Sound.ensure(); app.mode =
 /* ==================== mobile companion hub (auth, queue, matches, ranks) ==================== */
 const Hub = (() => {
   const TOKEN_KEY = 'nyit-hub-token';
-  const QUEUE_KEY_STORE = 'nyit-queue-key';
-  // one-time QR capture: /?key=XXXX -> stored, param stripped so it isn't re-shared
+  // QR key lives in MEMORY ONLY: any refresh drops it, and it expires 15 min after scan
+  const KEY_TTL_MS = 15 * 60 * 1000;
+  let queueKey = null;
+  let queueKeyAt = 0;
   {
+    localStorage.removeItem('nyit-queue-key'); // purge legacy persistent copies
     const qk = new URLSearchParams(location.search).get('key');
     if (qk) {
-      localStorage.setItem(QUEUE_KEY_STORE, qk);
+      queueKey = qk;
+      queueKeyAt = Date.now();
       history.replaceState(null, '', location.pathname);
     }
   }
-  const queueKey = localStorage.getItem(QUEUE_KEY_STORE);
   const JSON_HDR = { 'content-type': 'application/json' };
   let token = localStorage.getItem(TOKEN_KEY) || null;
   let me = null;            // {id, username, nickname}
@@ -1025,6 +1028,7 @@ const Hub = (() => {
   const userCache = new Map(); // username(lower) -> id
 
   async function api(path, opts = {}) {
+    if (queueKey && Date.now() - queueKeyAt > KEY_TTL_MS) queueKey = null; // expired -> rescan
     const headers = { ...(opts.headers || {}) };
     if (opts.body != null) headers['content-type'] = 'application/json';
     if (token) headers.authorization = 'Bearer ' + token;
@@ -1312,6 +1316,8 @@ const Hub = (() => {
     joinBtn.disabled = qMode.mode === 'offline' || (qKey.required && !qKey.valid);
     const note = document.getElementById('qr-note');
     note.hidden = !(qKey.required && !qKey.valid);
+    if (!note.hidden) note.textContent = '📲 Scan the table QR code to sign up & join (expires 15 min after scan).';
+    document.getElementById('gate-go').disabled = qKey.required && !qKey.valid;
     $('#join-mate').disabled = $('#join-guest').disabled = joinBtn.disabled;
     const wantSolo = segVal($('#join-format')) === 'solo';
     $('#join-mate').hidden = wantSolo;
