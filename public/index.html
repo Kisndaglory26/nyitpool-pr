@@ -158,6 +158,11 @@
   }
   .adm-wrap .sched-grid{max-width:480px}
   #adm-pending{display:flex;flex-direction:column;gap:8px}
+  .qr-note{margin:0;text-align:center;color:var(--warn);font-size:.85rem;font-weight:700}
+  .adm-qr{display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px;
+    background:#fff;border-radius:16px;max-width:320px}
+  .adm-qr img{width:240px;height:240px;image-rendering:pixelated}
+  .adm-qr .qr-url{color:#0b0f14;font-size:.75rem;word-break:break-all;text-align:center;font-weight:700}
   .bell-n{
     position:absolute;top:-7px;right:-7px;min-width:18px;height:18px;border-radius:99px;
     background:var(--danger);color:#fff;font-size:.68rem;font-weight:800;
@@ -660,6 +665,7 @@
             <input id="join-guest" class="name-input" placeholder="or guest name" maxlength="24">
             <button class="btn-primary" type="submit">Join</button>
           </form>
+          <p id="qr-note" class="qr-note" hidden>📲 Scan the table QR code to unlock joining.</p>
 
           <div id="hub-playing" hidden></div>
           <div id="hub-list"></div>
@@ -776,6 +782,9 @@
 
       <h4 class="board-h">Players</h4>
       <div class="hist-wrap"><table class="q-table" id="adm-players"></table></div>
+
+      <h4 class="board-h">Queue access QR</h4>
+      <div id="adm-qr" class="adm-qr"></div>
 
       <h4 class="board-h">Audit log</h4>
       <div class="hist-wrap"><table class="q-table" id="adm-audit"></table></div>
@@ -997,6 +1006,16 @@ $('#btn-mode-game').addEventListener('click', () => { Sound.ensure(); app.mode =
 /* ==================== mobile companion hub (auth, queue, matches, ranks) ==================== */
 const Hub = (() => {
   const TOKEN_KEY = 'nyit-hub-token';
+  const QUEUE_KEY_STORE = 'nyit-queue-key';
+  // one-time QR capture: /?key=XXXX -> stored, param stripped so it isn't re-shared
+  {
+    const qk = new URLSearchParams(location.search).get('key');
+    if (qk) {
+      localStorage.setItem(QUEUE_KEY_STORE, qk);
+      history.replaceState(null, '', location.pathname);
+    }
+  }
+  const queueKey = localStorage.getItem(QUEUE_KEY_STORE);
   const JSON_HDR = { 'content-type': 'application/json' };
   let token = localStorage.getItem(TOKEN_KEY) || null;
   let me = null;            // {id, username, nickname}
@@ -1010,6 +1029,7 @@ const Hub = (() => {
     if (opts.body != null) headers['content-type'] = 'application/json';
     if (token) headers.authorization = 'Bearer ' + token;
     if (adminPin) headers['x-admin-pin'] = adminPin;
+    if (queueKey) headers['x-queue-key'] = queueKey;
     const res = await fetch('/api' + path, {
       ...opts,
       body: opts.body != null ? JSON.stringify(opts.body) : undefined,
@@ -1242,6 +1262,7 @@ const Hub = (() => {
 
   /* ---------- tab 1: live queue ---------- */
   let parties = [];
+  let qKey = { required: false, valid: true };
   let qMode = { mode: 'open', override: null, schedule: { open: '09:00', duo_start: '12:00', duo_end: '18:00', close: '21:00' } };
   const fmt12 = hhmm => {
     const [h, m] = hhmm.split(':').map(Number);
@@ -1254,6 +1275,7 @@ const Hub = (() => {
       const r = await api('/queue');
       parties = r.parties;
       qMode = { mode: r.mode, override: r.override, schedule: r.schedule || qMode.schedule };
+      qKey = { required: !!r.key_required, valid: r.key_valid !== false };
     } catch { parties = null; }
     renderQueue();
   }
@@ -1286,8 +1308,11 @@ const Hub = (() => {
     // gate the join form
     const soloBtn = $('#join-format [data-v="solo"]');
     const joinBtn = $('#hub-join .btn-primary');
-    soloBtn.disabled = qMode.mode === 'duo-only';
-    joinBtn.disabled = qMode.mode === 'offline';
+    soloBtn.disabled = qMode.mode === 'duo-only' || (qKey.required && !qKey.valid);
+    joinBtn.disabled = qMode.mode === 'offline' || (qKey.required && !qKey.valid);
+    const note = document.getElementById('qr-note');
+    note.hidden = !(qKey.required && !qKey.valid);
+    $('#join-mate').disabled = $('#join-guest').disabled = joinBtn.disabled;
     const wantSolo = segVal($('#join-format')) === 'solo';
     $('#join-mate').hidden = wantSolo;
     $('#join-guest').hidden = wantSolo;
@@ -1712,6 +1737,34 @@ const Hub = (() => {
           pend.append(card);
         });
       } catch { pend.append(el('div', 'fine', 'Admin pin required.')); }
+
+      // queue access QR (lazy-loads a local-generation QR lib from CDN — key never leaves the browser)
+      try {
+        const { key } = await api('/admin/queue-key');
+        const box = $('#adm-qr');
+        box.innerHTML = '';
+        if (!key) {
+          box.append(el('div', 'fine center', 'No QUEUE_KEY secret set — joining is open to everyone. Set one with: npx wrangler secret put QUEUE_KEY'));
+        } else {
+          if (!window.qrcode) {
+            await new Promise((res, rej) => {
+              const sc = document.createElement('script');
+              sc.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+              sc.onload = res;
+              sc.onerror = () => rej(new Error('QR lib failed to load (needs internet once, then cached)'));
+              document.head.append(sc);
+            });
+          }
+          const url = location.origin + '/?key=' + encodeURIComponent(key);
+          const qr = window.qrcode(0, 'M');
+          qr.addData(url);
+          qr.make();
+          const img = document.createElement('img');
+          img.alt = 'Queue access QR';
+          img.src = qr.createDataURL(6, 8);
+          box.append(img, el('div', 'qr-url', url));
+        }
+      } catch (ex) { $('#adm-qr').innerHTML = ''; $('#adm-qr').append(el('div', 'fine center', String(ex.message))); }
 
       try {
         const players = (await api('/admin/players')).players;
