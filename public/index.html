@@ -286,6 +286,18 @@
   }
   .pend .btns{display:flex;gap:8px;flex-wrap:wrap}
   .pend .btns .btn-primary{padding:9px 16px;font-size:.9rem}
+  .pend-detail{display:flex;flex-direction:column;gap:6px}
+  .pend-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.72rem;font-weight:800;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .pend-id{color:var(--text)}
+  .pend-flag{color:var(--danger);border:1px solid var(--danger);border-radius:999px;padding:2px 9px}
+  .pend-team{display:flex;align-items:baseline;gap:10px;padding:7px 10px;border-radius:10px;
+    background:var(--panel2);border:1px solid transparent}
+  .pend-team.win{border-color:var(--ok);background:rgba(52,211,153,.09)}
+  .pend-names{flex:1;min-width:0;font-weight:700;font-size:.92rem;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+  .pend-won{flex-shrink:0;font-size:.62rem;font-weight:900;letter-spacing:.12em;color:var(--ok)}
+  .pend-meta{font-size:.75rem;color:var(--muted)}
   .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .mode-grid button{padding:10px 12px;line-height:1.35;text-align:center}
   .mode-grid button.on{color:var(--accent);border-color:var(--accent)}
@@ -1645,6 +1657,31 @@ const Hub = (() => {
   }
 
   /* ---------- drawer: account + my confirmations ---------- */
+  /* Full detail for a pending/disputed match: format, both rosters, winner, who's outstanding. */
+  function pendDetail(n) {
+    const box = el('div', 'pend-detail');
+
+    const top = el('div', 'pend-top');
+    top.append(el('span', 'pend-id', '#' + n.id));
+    top.append(el('span', 'fmt', n.match_type.toUpperCase()));
+    top.append(el('span', 'fmt', n.format));
+    if (n.status === 'disputed') top.append(el('span', 'pend-flag', '⚠ DISPUTED'));
+    box.append(top);
+
+    [1, 2].forEach(team => {
+      const names = team === 1 ? n.team1 : n.team2;
+      const row = el('div', 'pend-team' + (n.winner_team === team ? ' win' : ''));
+      row.append(el('span', 'lbl', 'TEAM ' + team));
+      row.append(el('span', 'pend-names', names || '—'));
+      if (n.winner_team === team) row.append(el('span', 'pend-won', 'WON'));
+      box.append(row);
+    });
+
+    if (n.awaiting_names) box.append(el('div', 'pend-meta', 'Waiting on: ' + n.awaiting_names));
+    if (n.confirmed_names) box.append(el('div', 'pend-meta', 'Confirmed: ' + n.confirmed_names));
+    return box;
+  }
+
   async function refreshDrawer() {
     const mineBox = $('#drawer-mine');
     mineBox.innerHTML = '';
@@ -1654,9 +1691,8 @@ const Hub = (() => {
       setBell(notifications.length);
       if (!notifications.length) mineBox.append(el('div', 'fine', 'Nothing waiting on you. 🎉'));
       notifications.forEach(n => {
-        const card = el('div', 'pend');
-        card.append(el('div', null,
-          `${n.match_type.toUpperCase()} ${n.format} — Team ${n.winner_team} won · ${n.unconfirmed} unconfirmed${n.status === 'disputed' ? ' · DISPUTED' : ''}`));
+        const card = el('div', 'pend' + (n.status === 'disputed' ? ' disputed' : ''));
+        card.append(pendDetail(n));
         const btns = el('div', 'btns');
         btns.append(actBtn('✓ Confirm', async () => {
           const r = await api('/matches/' + n.id + '/respond', { method: 'POST', body: { action: 'confirm' } });
@@ -1752,8 +1788,7 @@ const Hub = (() => {
         if (!all.length) pend.append(el('div', 'fine', 'No pending or disputed matches.'));
         const mkCard = n => {
           const card = el('div', 'pend' + (n.status === 'disputed' ? ' disputed' : ''));
-          card.append(el('div', null,
-            `#${n.id} ${n.match_type} ${n.format} — Team ${n.winner_team} won · ${n.unconfirmed} unconfirmed${n.status === 'disputed' ? ' · ⚠ DISPUTED' : ''}`));
+          card.append(pendDetail(n));
           const btns = el('div', 'btns');
           btns.append(actBtn('⚡ Approve', async () => {
             await api('/matches/' + n.id + '/admin-approve', { method: 'POST' });

@@ -671,20 +671,44 @@ async function handleApi(request, env, url) {
 
   if (pathname === '/api/notifications' && method === 'GET') {
     const user = await requireUser(request, env);
-    const sql = `
-      SELECT pm.id, pm.match_type, pm.format, pm.winner_team, pm.status, pm.created_at,
-             (SELECT COUNT(*) FROM pending_match_players x
-              WHERE x.pending_match_id = pm.id AND x.confirmed = 0) AS unconfirmed
-      FROM pending_matches pm JOIN pending_match_players mp ON mp.pending_match_id = pm.id
-      WHERE mp.user_id = ? AND mp.confirmed = 0`;
-    const { results } = await env.DB.prepare(sql).bind(user.id).all();
+    // rosters: who was on which team (nickname @username / guest) so admins can rule on a dispute
+    const PENDING_DETAIL = `
+      pm.id, pm.match_type, pm.format, pm.winner_team, pm.status, pm.created_at,
+      (SELECT COUNT(*) FROM pending_match_players x
+       WHERE x.pending_match_id = pm.id AND x.confirmed = 0) AS unconfirmed,
+      (SELECT group_concat(
+         CASE WHEN mp.user_id IS NOT NULL
+              THEN (SELECT nickname || ' @' || username FROM users u WHERE u.id = mp.user_id)
+              ELSE 'Guest: ' || mp.guest_name END, ' | ')
+       FROM pending_match_players mp WHERE mp.pending_match_id = pm.id AND mp.team = 1) AS team1,
+      (SELECT group_concat(
+         CASE WHEN mp.user_id IS NOT NULL
+              THEN (SELECT nickname || ' @' || username FROM users u WHERE u.id = mp.user_id)
+              ELSE 'Guest: ' || mp.guest_name END, ' | ')
+       FROM pending_match_players mp WHERE mp.pending_match_id = pm.id AND mp.team = 2) AS team2,
+      (SELECT group_concat(
+         CASE WHEN mp.user_id IS NOT NULL
+              THEN (SELECT nickname || ' @' || username FROM users u WHERE u.id = mp.user_id)
+              ELSE mp.guest_name END, ', ')
+       FROM pending_match_players mp
+       WHERE mp.pending_match_id = pm.id AND mp.confirmed = 0) AS awaiting_names,
+      (SELECT group_concat(
+         CASE WHEN mp.user_id IS NOT NULL
+              THEN (SELECT nickname || ' @' || username FROM users u WHERE u.id = mp.user_id)
+              ELSE mp.guest_name END, ', ')
+       FROM pending_match_players mp
+       WHERE mp.pending_match_id = pm.id AND mp.confirmed = 1) AS confirmed_names`;
+    const { results } = await env.DB.prepare(
+      `SELECT ${PENDING_DETAIL}
+       FROM pending_matches pm JOIN pending_match_players mp ON mp.pending_match_id = pm.id
+       WHERE mp.user_id = ? AND mp.confirmed = 0`
+    ).bind(user.id).all();
     const admin = await isAdmin(request, env);
     let adminList = null;
     if (admin) {
       adminList = (await env.DB.prepare(
-        `SELECT pm.id, pm.match_type, pm.format, pm.winner_team, pm.status, pm.created_at,
-                (SELECT COUNT(*) FROM pending_match_players x WHERE x.pending_match_id = pm.id AND x.confirmed = 0) AS unconfirmed
-         FROM pending_matches pm WHERE pm.status IN ('pending','disputed') ORDER BY pm.id DESC`
+        `SELECT ${PENDING_DETAIL} FROM pending_matches pm
+         WHERE pm.status IN ('pending','disputed') ORDER BY pm.status DESC, pm.id DESC`
       ).all()).results;
     }
     return json({ notifications: results, admin: adminList, admin_unlocked: admin });
