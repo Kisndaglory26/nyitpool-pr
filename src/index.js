@@ -593,10 +593,42 @@ async function handleApi(request, env, url) {
       return bad('only the creator (or a claiming teammate) can set Player 2', 403);
     }
     if (claiming) {
-      // one party per player: claiming puts the claimer on the queue
+      // claiming joins this party even when already queued elsewhere — it's a
+      // team switch: detach from the old party first (same split rules as leave)
       const elsewhere = await userInLiveParty(env.DB, user.id, party.id);
-      if (elsewhere) return bad(`you are already in party #${elsewhere.id}`, 409);
-      await env.DB.prepare('UPDATE queue_parties SET p2_user_id = ? WHERE id = ?').bind(user.id, party.id).run();
+      const stmts = [];
+      let switchFrom = null, oldDisbanded = false;
+      if (elsewhere) {
+        const old = await env.DB.prepare('SELECT * FROM queue_parties WHERE id = ?').bind(elsewhere.id).first();
+        const hasP2 = !!(old.p2_user_id || old.p2_guest_name);
+        const leaverIsP1 = old.p1_user_id === user.id;
+        const disband = old.format === 'solo' || !hasP2;
+        switchFrom = old.id;
+        oldDisbanded = disband;
+        if (disband) {
+          stmts.push(env.DB.prepare("UPDATE queue_parties SET status = 'skipped' WHERE id = ?").bind(old.id));
+          stmts.push(env.DB.prepare('DELETE FROM skip_votes WHERE party_id = ?').bind(old.id));
+        } else if (leaverIsP1) {
+          stmts.push(env.DB.prepare(
+            `UPDATE queue_parties SET p1_user_id = p2_user_id, p1_guest_name = p2_guest_name,
+             p2_user_id = NULL, p2_guest_name = NULL WHERE id = ?`
+          ).bind(old.id));
+        } else {
+          stmts.push(env.DB.prepare(
+            'UPDATE queue_parties SET p2_user_id = NULL, p2_guest_name = NULL WHERE id = ?'
+          ).bind(old.id));
+        }
+        stmts.push(env.DB.prepare(
+          'DELETE FROM skip_votes WHERE party_id = ? AND voter_user_id = ?').bind(old.id, user.id));
+      }
+      stmts.push(env.DB.prepare('UPDATE queue_parties SET p2_user_id = ? WHERE id = ?').bind(user.id, party.id));
+      await env.DB.batch(stmts);
+      if (oldDisbanded) await promoteNext(env.DB); // the old party may have freed a table seat
+      await audit(env.DB, 'teammate', user.id,
+        'party=' + party.id + (switchFrom != null
+          ? ' switch-from=' + switchFrom + (oldDisbanded ? ' old-disbanded' : '')
+          : ' claim'));
+      return json({ ok: true, switched: switchFrom != null, from: switchFrom });
     } else if (body?.p2_user_id) {
       const mate = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(Number(body.p2_user_id)).first();
       if (!mate) return bad('teammate not found');
