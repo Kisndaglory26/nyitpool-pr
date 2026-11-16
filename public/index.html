@@ -850,6 +850,7 @@
 
       <h4 class="board-h">Live queue parties</h4>
       <p class="fine">Fix rosters — search a registered player or type a guest name. Reorder the line and set who is on the table.</p>
+      <button id="adm-add-party" class="add-btn" type="button">+ Add blank party slot</button>
       <div id="adm-parties"></div>
 
       <h4 class="board-h">Pending &amp; disputed matches</h4>
@@ -1294,6 +1295,12 @@ const Hub = (() => {
   $('#hub-admin-chip').addEventListener('click', () => showScreen('adminpage'));
   $('#a-admin-page').addEventListener('click', () => { $('#hub-drawer').hidden = true; showScreen('adminpage'); });
   $('#adm-back').addEventListener('click', () => showScreen('queue'));
+  $('#adm-add-party').addEventListener('click', async () => {
+    try {
+      await api('/admin/parties', { method: 'POST', body: {} });
+      await AdminPage.refresh();
+    } catch (ex) { alert(ex.message); }
+  });
 
   /* ---------- tabs ---------- */
   $$('.hub-tabs button').forEach(b => b.addEventListener('click', () => {
@@ -1460,7 +1467,8 @@ const Hub = (() => {
       const wrap = el('div', 'q-players');
       const grp = p => {
         const g = el('div', 'q-grp');
-        g.append(pcard(p.p1, true));
+        if (p.p1) g.append(pcard(p.p1, true));
+        else g.append(el('span', 'meta', 'empty slot'));
         if (p.p2) g.append(pcard(p.p2, true));
         return g;
       };
@@ -1471,11 +1479,12 @@ const Hub = (() => {
       }
       const btns = el('div', 'actions');
       playing.forEach(p => {
-        btns.append(actBtn((p.p1.name.split(' ')[0]) + ' out', async () => {
-          if (confirm('Remove ' + p.p1.name + ' from the table? Next in line steps up.')) {
+        const label = p.p1 ? p.p1.name.split(' ')[0] : 'Empty';
+        btns.append(actBtn(label + ' out', async () => {
+          if (confirm('Remove ' + (p.p1 ? p.p1.name : 'the empty party') + ' from the table? Next in line steps up.')) {
             await api('/queue/' + p.id, {
               method: 'DELETE',
-              body: me && me.guest && !p.p1.registered && p.p1.name === 'Guest: ' + me.nickname
+              body: me && me.guest && p.p1 && !p.p1.registered && p.p1.name === 'Guest: ' + me.nickname
                 ? { guest_name: me.nickname } : undefined,
             }); refreshAll();
           }
@@ -1537,14 +1546,15 @@ const Hub = (() => {
       const tr = el('tr');
       tr.append(el('td', 'pos', String(k + 2)));
       const players = el('td');
-      players.append(pline(p.p1));
+      if (p.p1) players.append(pline(p.p1));
+      else players.append(el('span', 'meta', '(empty slot)'));
       if (p.p2) players.append(pline(p.p2));
       tr.append(players);
       const fmtCell = el('td', 'fmt-cell');
       fmtCell.append(el('span', 'fmt', p.format.toUpperCase()));
       tr.append(fmtCell);
       const skipCell = el('td', 'skip-cell');
-      if (me && !me.guest) { // skip votes need an account
+      if (me && !me.guest && p.p1) { // skip votes need an account and a real party
         skipCell.append(actBtn(`${p.votes}/3`, async () => {
           const r = await api('/queue/' + p.id + '/vote-skip', { method: 'POST' });
           if (r.skipped) refreshAll();

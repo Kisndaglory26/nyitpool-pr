@@ -177,9 +177,13 @@ async function effectiveMode(db, env) {
 
 async function promoteNext(db) {
   // the table hosts TWO parties at once (winner stays, challenger from the queue);
-  // promote the earliest waiting party while fewer than two are playing
+  // promote the earliest waiting party with actual players while fewer than two
+  // are playing — blank admin stub parties are skipped
   const PROMOTE = `UPDATE queue_parties SET status = 'playing'
-    WHERE id = (SELECT id FROM queue_parties WHERE status = 'waiting' ORDER BY position LIMIT 1)
+    WHERE id = (SELECT id FROM queue_parties WHERE status = 'waiting'
+                AND (p1_user_id IS NOT NULL OR p1_guest_name IS NOT NULL
+                     OR p2_user_id IS NOT NULL OR p2_guest_name IS NOT NULL)
+                ORDER BY position LIMIT 1)
       AND (SELECT COUNT(*) FROM queue_parties WHERE status = 'playing') < 2`;
   await db.batch([db.prepare(PROMOTE), db.prepare(PROMOTE)]);
 }
@@ -652,25 +656,69 @@ async function handleApi(request, env, url) {
     const id = Number(m[1]);
     const party = await env.DB.prepare('SELECT * FROM queue_parties WHERE id = ?').bind(id).first();
     if (!party) return bad('not found', 404);
-    const member = user && (party.p1_user_id === user.id || party.p2_user_id === user.id);
+    const isP1User = user && party.p1_user_id === user.id;
+    const isP2User = user && party.p2_user_id === user.id;
     const admin = await isAdmin(request, env);
     // guests prove ownership by the nickname they joined with
     const body = await request.json().catch(() => null);
     const guestName = String(body?.guest_name || '').trim().toLowerCase();
     const guestLead = !user && !party.p1_user_id && !!party.p1_guest_name &&
       guestName === party.p1_guest_name.toLowerCase();
-    if (!member && !guestLead && !admin) return bad('not your party', 403);
-    await env.DB.batch([
-      env.DB.prepare("UPDATE queue_parties SET status = 'skipped' WHERE id = ?").bind(id),
-      env.DB.prepare('DELETE FROM skip_votes WHERE party_id = ?').bind(id),
-    ]);
-    await promoteNext(env.DB); // table seat freed — next party steps up
+    if (!isP1User && !isP2User && !guestLead && !admin) return bad('not your party', 403);
+
+    // one person leaving detaches only them: the party survives with the other
+    // player; a pure-admin removal (or a party left with nobody) disbands it
+    const hasP2 = !!(party.p2_user_id || party.p2_guest_name);
+    const leaverIsP1 = isP1User || guestLead;
+    const adminWipe = admin && !isP1User && !isP2User && !guestLead;
+    const disband = adminWipe || party.format === 'solo' || !hasP2;
+    const stmts = [];
+    if (disband) {
+      stmts.push(env.DB.prepare("UPDATE queue_parties SET status = 'skipped' WHERE id = ?").bind(id));
+      stmts.push(env.DB.prepare('DELETE FROM skip_votes WHERE party_id = ?').bind(id));
+    } else if (leaverIsP1) {
+      // P1 walks — P2 takes over the party (registered or guest), P2 slot opens
+      stmts.push(env.DB.prepare(
+        `UPDATE queue_parties SET p1_user_id = p2_user_id, p1_guest_name = p2_guest_name,
+         p2_user_id = NULL, p2_guest_name = NULL WHERE id = ?`
+      ).bind(id));
+      if (user) {
+        stmts.push(env.DB.prepare(
+          'DELETE FROM skip_votes WHERE party_id = ? AND voter_user_id = ?').bind(id, user.id));
+      }
+    } else {
+      // P2 walks — P1 keeps the party, the slot opens for a new teammate
+      stmts.push(env.DB.prepare(
+        'UPDATE queue_parties SET p2_user_id = NULL, p2_guest_name = NULL WHERE id = ?'
+      ).bind(id));
+      if (user) {
+        stmts.push(env.DB.prepare(
+          'DELETE FROM skip_votes WHERE party_id = ? AND voter_user_id = ?').bind(id, user.id));
+      }
+    }
+    await env.DB.batch(stmts);
+    if (disband) await promoteNext(env.DB); // table seat freed — next party steps up
     await audit(env.DB, 'queue_leave', user ? user.id : null,
-      'party=' + id + (admin ? ' admin=1' : '') + (guestLead ? ' guest=' + party.p1_guest_name : ''));
-    return json({ ok: true });
+      'party=' + id + (adminWipe ? ' admin=1' : '')
+      + (guestLead ? ' guest=' + party.p1_guest_name : '')
+      + (disband ? ' disbanded' : (leaverIsP1 ? ' p1-left p2-takes-over' : ' p2-left')));
+    return json({ ok: true, disbanded: disband });
   }
 
   /* ---------- admin: party roster edits + manual table control ---------- */
+  if (pathname === '/api/admin/parties' && method === 'POST') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    // blank duo stub — admin fills the roster afterwards (never auto-promoted)
+    const max = await env.DB.prepare(
+      'SELECT COALESCE(MAX(position), 0) AS m FROM queue_parties').first();
+    const { meta } = await env.DB.prepare(
+      `INSERT INTO queue_parties (format, status, created_by_user_id, position, created_at)
+       VALUES ('duo', 'waiting', NULL, ?, ?)`
+    ).bind(max.m + 1, Date.now()).run();
+    await audit(env.DB, 'admin_party_add', null, 'party=' + meta.last_row_id + ' blank duo');
+    return json({ ok: true, id: meta.last_row_id }, 201);
+  }
+
   m = pathname.match(/^\/api\/admin\/parties\/(\d+)$/);
   if (m && method === 'PUT') {
     if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
