@@ -296,6 +296,7 @@ async function replayAllRatings(db) {
       st.rw, st.rl, st.cw, st.cl, st.last, id));
   }
   if (stmts.length) await db.batch(stmts);
+  return stmts.length; // users recomputed
 }
 
 async function commitMatch(db, pending) {
@@ -1088,6 +1089,14 @@ async function handleApi(request, env, url) {
     ]);
     await audit(env.DB, 'admin_match_reject', null, 'pending=' + id + ' rejected' + (pending.status === 'disputed' ? ' (was disputed)' : ''));
     return json({ ok: true, id, rejected: true });
+  }
+
+  /* ---------- admin: global rating recalculation ---------- */
+  if (pathname === '/api/admin/recalc-ratings' && method === 'POST') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    const n = await replayAllRatings(env.DB); // reset everyone, replay full history
+    await audit(env.DB, 'admin_recalc', null, 'ratings replayed for ' + n + ' users');
+    return json({ ok: true, users: n });
   }
 
   if (pathname === '/api/admin/players' && method === 'GET') {
