@@ -580,19 +580,36 @@ async function handleApi(request, env, url) {
     const body = await request.json().catch(() => null);
     const isCreator = party.created_by_user_id === user.id;
     const open = party.p2_user_id === null && party.p2_guest_name === null;
-    const claiming = open && user.id !== party.created_by_user_id
+    const claiming = open && party.p1_user_id !== user.id
       && body?.p2_user_id == null && !body?.p2_guest_name;
-    if (!isCreator && !claiming) return bad('only the creator (or a claiming teammate) can set Player 2', 403);
+    if (!isCreator && !claiming) {
+      if (!open && body?.p2_user_id == null && !body?.p2_guest_name) {
+        return bad('party already has a teammate', 409); // a claim attempt on a filled party
+      }
+      return bad('only the creator (or a claiming teammate) can set Player 2', 403);
+    }
     if (claiming) {
+      // one party per player: claiming puts the claimer on the queue
+      const elsewhere = await userInLiveParty(env.DB, user.id, party.id);
+      if (elsewhere) return bad(`you are already in party #${elsewhere.id}`, 409);
       await env.DB.prepare('UPDATE queue_parties SET p2_user_id = ? WHERE id = ?').bind(user.id, party.id).run();
     } else if (body?.p2_user_id) {
       const mate = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(Number(body.p2_user_id)).first();
       if (!mate) return bad('teammate not found');
+      if (mate.id === party.p1_user_id) return bad('that player is already on this party');
+      const elsewhere = await userInLiveParty(env.DB, mate.id, party.id);
+      if (elsewhere) return bad(`player is already in party #${elsewhere.id}`, 409);
       await env.DB.prepare('UPDATE queue_parties SET p2_user_id = ?, p2_guest_name = NULL WHERE id = ?')
         .bind(mate.id, party.id).run();
     } else if (body?.p2_guest_name) {
       const g = String(body.p2_guest_name).trim().slice(0, 24);
       if (!g) return bad('guest name required');
+      // guest names are queue identities too (see join) — one slot per name
+      const clash = await env.DB.prepare(
+        `SELECT id FROM queue_parties WHERE status IN ('waiting','playing') AND id != ?
+         AND (LOWER(COALESCE(p1_guest_name, '')) = LOWER(?) OR LOWER(COALESCE(p2_guest_name, '')) = LOWER(?))`
+      ).bind(party.id, g, g).first();
+      if (clash) return bad(`"${g}" is already queued in party #${clash.id}`, 409);
       await env.DB.prepare('UPDATE queue_parties SET p2_guest_name = ?, p2_user_id = NULL WHERE id = ?')
         .bind(g, party.id).run();
     } else if (isCreator && body?.p2_guest_name === '') {

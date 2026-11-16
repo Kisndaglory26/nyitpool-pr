@@ -1446,6 +1446,9 @@ const Hub = (() => {
     renderHours();
     const playing = parties ? parties.filter(p => p.status === 'playing') : [];
     const waiting = parties ? parties.filter(p => p.status === 'waiting') : [];
+    // one party per player — hide Team up once the signed-in user is queued anywhere
+    const iAmQueued = me && !me.guest
+      && parties.some(p => [p.p1, p.p2].some(x => x && x.registered && x.username === me.username));
     const nowBox = $('#hub-playing');
     const list = $('#hub-list');
 
@@ -1557,7 +1560,7 @@ const Hub = (() => {
           });
           refreshAll();
         }));
-      } else if (!p.p2 && p.format === 'duo' && me && !me.guest) {
+      } else if (!p.p2 && p.format === 'duo' && me && !me.guest && !iAmQueued) {
         actCell.append(actBtn('Team up', async () => {
           await api('/queue/' + p.id + '/teammate', { method: 'PATCH', body: {} });
           refreshAll();
