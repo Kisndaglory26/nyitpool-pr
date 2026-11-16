@@ -1111,6 +1111,10 @@ export default {
         return await handleApi(request, env, url);
       } catch (err) {
         if (err instanceof HttpError) return bad(err.message, err.status);
+        // forgotten remote migration: surface the fix instead of a bare 500
+        if (/NOT NULL constraint failed: queue_parties\.created_by_user_id/.test(String(err))) {
+          return bad('database schema is out of date — run: npm run db:migrate (applies 0005)', 503);
+        }
         return json({ error: 'internal error', detail: String(err?.message || err) }, 500);
       }
     }
