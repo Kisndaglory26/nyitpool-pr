@@ -171,14 +171,33 @@
     background:var(--danger);color:#fff;font-size:.68rem;font-weight:800;
     display:grid;place-items:center;padding:0 4px;
   }
+  .gate-split{
+    flex:1;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:14px;
+    align-items:stretch;margin:auto;
+  }
   .gate-card{
-    max-width:400px;width:100%;margin:auto;padding:26px 22px;display:flex;flex-direction:column;gap:12px;
+    width:100%;margin:0;padding:26px 22px;display:flex;flex-direction:column;gap:12px;
     background:var(--panel);border:1px solid var(--line);border-radius:20px;
   }
   .gate-card h3{margin:0;font-size:1.3rem}
   .gate-card label{display:flex;flex-direction:column;gap:6px;font-size:.75rem;font-weight:800;letter-spacing:.14em;color:var(--muted)}
   .pin-hint{margin-top:-6px;font-size:.72rem;color:var(--muted);text-align:center}
   .gate-seg{align-self:start}
+  .gate-seg button{padding:8px 10px;font-size:.85rem;white-space:nowrap}
+  .gate-benefits{
+    background:var(--panel);border:1px solid var(--line);border-radius:20px;
+    padding:26px 22px;display:flex;flex-direction:column;gap:12px;
+  }
+  .gate-benefits h3{margin:0;font-size:1.3rem}
+  .benefit-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+  .benefit-list li{display:flex;gap:10px;align-items:flex-start;font-size:.9rem;font-weight:700;line-height:1.5}
+  .benefit-list li .sub{display:block;color:var(--muted);font-size:.78rem;font-weight:500;margin-top:2px}
+  .guest-warn{
+    margin-top:auto;border:1px solid var(--warn);border-radius:12px;padding:12px 14px;
+    background:linear-gradient(180deg,rgba(251,191,36,.14),transparent 78%),var(--panel2);
+    color:var(--warn);font-size:.85rem;font-weight:700;line-height:1.55;
+  }
+  @media (max-width:720px){ .gate-split{grid-template-columns:1fr} }
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .seg button{padding:8px 14px;font-size:.9rem;font-weight:700;color:var(--muted);background:var(--panel2);transition:.12s}
   .seg button:hover{color:var(--text)}
@@ -647,19 +666,37 @@
       <div id="queue-hours" class="q-hours" hidden></div>
 
       <div id="hub-gate">
-        <div class="gate-card">
-          <h3 id="gate-title">Sign in to the table</h3>
-          <p class="fine">Queue, match logging &amp; rankings live here. The timer stays login-free.</p>
-          <div class="seg gate-seg">
-            <button id="gate-signin" class="on" type="button">Sign in</button>
-            <button id="gate-create" type="button">Create account</button>
+        <div class="gate-split">
+          <div class="gate-benefits">
+            <h3 id="benefits-title">Why create an account?</h3>
+            <ul class="benefit-list">
+              <li><span aria-hidden="true">🏷️</span><span>A nickname that sticks<span class="sub">Shown on the queue, match history and leaderboard — with your @username.</span></span></li>
+              <li><span aria-hidden="true">🎱</span><span>Join the table queue<span class="sub">Claim the table solo or with a teammate, straight from your phone.</span></span></li>
+              <li><span aria-hidden="true">📋</span><span>Log every match<span class="sub">Ranked or casual — both sides confirm the result with two taps.</span></span></li>
+              <li><span aria-hidden="true">📈</span><span>Rating &amp; leaderboard<span class="sub">Glicko-2 rating with a tracked W–L record. Watch yourself climb.</span></span></li>
+              <li><span aria-hidden="true">🔑</span><span>It follows you<span class="sub">Sign back in on any device with just your username + PIN.</span></span></li>
+            </ul>
+            <div id="gate-guest-warn" class="guest-warn" hidden>
+              ⚠️ Guest mode — nothing is saved. Leave or refresh and your session is gone. You can browse the
+              queue, history and rankings, but you can't join the queue, log matches, earn a rating, or appear
+              on the leaderboard. An account fixes all of that — and takes about 20 seconds.
+            </div>
           </div>
-          <label id="gate-nick-row" hidden>Nickname<input id="f-nick" class="name-input" maxlength="24" autocomplete="off"></label>
-          <label>Username<input id="f-user" class="name-input" maxlength="20" autocomplete="username"></label>
-          <label>PIN<input id="f-pin" class="name-input" type="password" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="••••" autocomplete="off"></label>
-          <span class="pin-hint">4–6 digits · numbers only — numpad on mobile</span>
-          <button id="gate-go" class="btn-primary big" type="button">Sign in</button>
-          <p id="gate-err" class="fine" style="color:var(--danger)" hidden></p>
+          <div class="gate-card">
+            <h3 id="gate-title">Sign in to the table</h3>
+            <p class="fine">Queue, match logging &amp; rankings live here. The timer stays login-free.</p>
+            <div class="seg gate-seg">
+              <button id="gate-signin" class="on" type="button">Sign in</button>
+              <button id="gate-create" type="button">Create account</button>
+              <button id="gate-guest" type="button">Guest</button>
+            </div>
+            <label id="gate-nick-row" hidden>Nickname<input id="f-nick" class="name-input" maxlength="24" autocomplete="off"></label>
+            <label id="gate-user-row">Username<input id="f-user" class="name-input" maxlength="20" autocomplete="username"></label>
+            <label id="gate-pin-row">PIN<input id="f-pin" class="name-input" type="password" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="••••" autocomplete="off"></label>
+            <span id="gate-pin-hint" class="pin-hint">4–6 digits · numbers only — numpad on mobile</span>
+            <button id="gate-go" class="btn-primary big" type="button">Sign in</button>
+            <p id="gate-err" class="fine" style="color:var(--danger)" hidden></p>
+          </div>
         </div>
       </div>
 
@@ -1065,14 +1102,30 @@ const Hub = (() => {
     gateMode = mode;
     $('#gate-signin').classList.toggle('on', mode === 'signin');
     $('#gate-create').classList.toggle('on', mode === 'create');
-    $('#gate-nick-row').hidden = mode !== 'create';
-    $('#gate-go').textContent = mode === 'signin' ? 'Sign in' : 'Create account';
+    $('#gate-guest').classList.toggle('on', mode === 'guest');
+    $('#gate-nick-row').hidden = mode === 'signin';
+    $('#gate-user-row').hidden = mode === 'guest';
+    $('#gate-pin-row').hidden = mode === 'guest';
+    $('#gate-pin-hint').hidden = mode === 'guest';
+    $('#gate-go').textContent =
+      mode === 'signin' ? 'Sign in' : mode === 'create' ? 'Create account' : 'Continue as guest';
+    $('#benefits-title').textContent = mode === 'guest' ? 'What guests miss out on' : 'Why create an account?';
+    $('#gate-guest-warn').hidden = mode !== 'guest';
     $('#gate-err').hidden = true;
   };
   $('#gate-signin').addEventListener('click', () => setGate('signin'));
   $('#gate-create').addEventListener('click', () => setGate('create'));
+  $('#gate-guest').addEventListener('click', () => setGate('guest'));
   $('#gate-go').addEventListener('click', async () => {
     const err = m => { const e = $('#gate-err'); e.textContent = m; e.hidden = false; };
+    if (gateMode === 'guest') { // nickname-only session — no account is created, nothing persists
+      const nickname = $('#f-nick').value.trim();
+      if (!nickname) return err('pick a nickname');
+      me = { guest: true, id: null, username: null, nickname };
+      $('#f-nick').value = '';
+      enterHub();
+      return;
+    }
     const username = $('#f-user').value.trim().toLowerCase();
     const pin = $('#f-pin').value.trim();
     if (!/^\d{4,6}$/.test(pin)) return err('PIN must be 4–6 digits, numbers only');
@@ -1109,10 +1162,21 @@ const Hub = (() => {
     $('#hub-gate').hidden = true;
     $('#hub-main').hidden = false;
     $('#hub-user').hidden = false;
-    $('#hub-user').textContent = me.nickname;
-    $('#hub-bell').hidden = false;
+    $('#hub-user').textContent = me.guest ? me.nickname + ' · guest' : me.nickname;
+    $('#hub-user').title = me.guest ? 'Guest session — tap to pick another option' : 'Account & notifications';
+    $('#hub-bell').hidden = me.guest; // guests have no account -> no notification drawer
     buildLogSlots();
     refreshAll();
+  }
+
+  /* guests have no account drawer — the user chip drops them back to the gate */
+  function exitGuest() {
+    me = null;
+    $('#hub-main').hidden = true;
+    $('#hub-user').hidden = true;
+    $('#hub-user').title = '';
+    $('#hub-bell').hidden = true;
+    $('#hub-gate').hidden = false;
   }
 
   /* ---------- header: bell + user badge + admin ---------- */
@@ -1122,7 +1186,10 @@ const Hub = (() => {
     await refreshDrawer();
   }
   $('#hub-bell').addEventListener('click', openDrawer);
-  $('#hub-user').addEventListener('click', openDrawer);
+  $('#hub-user').addEventListener('click', () => {
+    if (me && me.guest) exitGuest();
+    else openDrawer();
+  });
   $('#drawer-close').addEventListener('click', () => { $('#hub-drawer').hidden = true; });
   $$('#admin-modes button').forEach(b =>
     b.addEventListener('click', () => setQueueMode(b.dataset.m)));
@@ -1325,15 +1392,17 @@ const Hub = (() => {
       b.textContent = '🟢 Queue open — Solo & Duo' + adminTag + span;
     }
     // gate the join form
+    const guestLocked = !!(me && me.guest); // guests browse only — joining needs an account
     const soloBtn = $('#join-format [data-v="solo"]');
     const joinBtn = $('#hub-join .btn-primary');
     soloBtn.disabled = qMode.mode === 'duo-only' || (qKey.required && !qKey.valid);
-    joinBtn.disabled = qMode.mode === 'offline' || (qKey.required && !qKey.valid);
+    joinBtn.disabled = qMode.mode === 'offline' || (qKey.required && !qKey.valid) || guestLocked;
     // QUEUE_KEY gates JOINING only — sign in / sign up stay open
     const locked = qKey.required && !qKey.valid;
     const note = document.getElementById('qr-note');
-    note.hidden = !locked;
+    note.hidden = !locked && !guestLocked;
     if (locked) note.textContent = '📲 Scan the table QR code to join the queue (key lasts 15 min after scanning).';
+    else if (guestLocked) note.textContent = '🎭 Guests can watch the queue — an account (free) lets you join it.';
     $('#join-mate').disabled = $('#join-guest').disabled = joinBtn.disabled;
     const wantSolo = segVal($('#join-format')) === 'solo';
     $('#join-mate').hidden = wantSolo;
@@ -1444,17 +1513,19 @@ const Hub = (() => {
       fmtCell.append(el('span', 'fmt', p.format.toUpperCase()));
       tr.append(fmtCell);
       const skipCell = el('td', 'skip-cell');
-      skipCell.append(actBtn(`${p.votes}/3`, async () => {
-        const r = await api('/queue/' + p.id + '/vote-skip', { method: 'POST' });
-        if (r.skipped) refreshAll();
-      }, 'Vote to skip ' + p.p1.name));
+      if (me && !me.guest) { // skip votes need an account
+        skipCell.append(actBtn(`${p.votes}/3`, async () => {
+          const r = await api('/queue/' + p.id + '/vote-skip', { method: 'POST' });
+          if (r.skipped) refreshAll();
+        }, 'Vote to skip ' + p.p1.name));
+      }
       tr.append(skipCell);
       const actCell = el('td', 'act-cell');
       if (mine) {
         actCell.append(actBtn('Leave', async () => {
           await api('/queue/' + p.id, { method: 'DELETE' }); refreshAll();
         }));
-      } else if (!p.p2 && p.format === 'duo' && me) {
+      } else if (!p.p2 && p.format === 'duo' && me && !me.guest) {
         actCell.append(actBtn('Team up', async () => {
           await api('/queue/' + p.id + '/teammate', { method: 'PATCH', body: {} });
           refreshAll();
@@ -1504,7 +1575,7 @@ const Hub = (() => {
           inp.className = 'name-input';
           inp.value = me ? me.nickname : '';
           inp.disabled = true;
-          inp.dataset.uid = me ? me.id : '';
+          inp.dataset.uid = me && !me.guest ? me.id : '';
           box.append(inp);
           continue;
         }
@@ -1522,6 +1593,11 @@ const Hub = (() => {
     e.preventDefault();
     const msg = $('#log-msg');
     msg.textContent = '';
+    if (me.guest) { // match logging is tied to accounts — guests stay read-only
+      msg.style.color = 'var(--danger)';
+      msg.textContent = "⚠️ Guests can't log matches — create an account (free) to track results.";
+      return;
+    }
     const teams = { 1: [], 2: [] };
     for (const sel of ['#lt1', '#lt2']) {
       const team = sel === '#lt1' ? 1 : 2;
@@ -1872,6 +1948,7 @@ const Hub = (() => {
     await refreshQueue();
     if (tab === 'board') await refreshBoard();
     if (tab === 'log') await refreshHistory();
+    if (me.guest) return; // no account -> nothing to notify
     try {
       const { notifications } = await api('/notifications');
       setBell(notifications.length);
