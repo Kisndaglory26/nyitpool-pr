@@ -1453,11 +1453,12 @@ const Hub = (() => {
     renderHours();
     const playing = parties ? parties.filter(p => p.status === 'playing') : [];
     const waiting = parties ? parties.filter(p => p.status === 'waiting') : [];
-    // one party per player — hide Team up once the signed-in user is queued anywhere
-    const iAmQueued = me && !me.guest
-      && parties.some(p => [p.p1, p.p2].some(x => x && x.registered && x.username === me.username));
     const nowBox = $('#hub-playing');
     const list = $('#hub-list');
+    const minePlaying = p => me && [p.p1, p.p2].some(x => x && (
+      (x.registered && x.username === me.username)
+      || (me.guest && !x.registered && x.name === 'Guest: ' + me.nickname)
+    ));
 
     nowBox.hidden = !playing.length;
     nowBox.className = 'q-now';
@@ -1489,6 +1490,13 @@ const Hub = (() => {
             }); refreshAll();
           }
         }));
+        // table skip vote: three people can vote a stuck party off the table
+        if (me && !me.guest && !minePlaying(p)) {
+          btns.append(actBtn(`Skip ${p.votes}/3`, async () => {
+            const r = await api('/queue/' + p.id + '/vote-skip', { method: 'POST' });
+            if (r.skipped) refreshAll();
+          }, 'Vote to skip ' + (p.p1 ? p.p1.name : 'this party') + ' off the table'));
+        }
       });
       nowBox.append(wrap, btns);
     }
@@ -1570,7 +1578,7 @@ const Hub = (() => {
           });
           refreshAll();
         }));
-      } else if (!p.p2 && p.format === 'duo' && me && !me.guest && !iAmQueued) {
+      } else if (!p.p2 && p.format === 'duo' && me && !me.guest) {
         actCell.append(actBtn('Team up', async () => {
           await api('/queue/' + p.id + '/teammate', { method: 'PATCH', body: {} });
           refreshAll();
