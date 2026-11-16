@@ -510,7 +510,9 @@ async function handleApi(request, env, url) {
   }
 
   if (pathname === '/api/queue/join' && method === 'POST') {
-    const user = await requireUser(request, env);
+    // Registered users join as themselves; guests (no token) join under a
+    // nickname — both need a valid QUEUE_KEY when one is set.
+    const user = await currentUser(request, env);
     if (!(await validQueueKey(request, env))) {
       return bad('scan the table QR code to join the queue', 403);
     }
@@ -525,29 +527,46 @@ async function handleApi(request, env, url) {
     if (format === 'solo' && eff.mode === 'duo-only') {
       return bad('queue is duo-only right now', 403);
     }
+    let p1UserId = null, p1Guest = null;
+    if (user) {
+      p1UserId = user.id;
+    } else {
+      p1Guest = String(body?.p1_guest_name || '').trim().slice(0, 24);
+      if (!p1Guest) return bad('guests join with a nickname — pick one first');
+    }
     let p2UserId = null, p2Guest = null;
     if (body?.p2_user_id) {
       const mate = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(Number(body.p2_user_id)).first();
       if (!mate) return bad('teammate not found');
-      if (mate.id === user.id) return bad("can't team with yourself");
+      if (user && mate.id === user.id) return bad("can't team with yourself");
       p2UserId = mate.id;
     } else if (body?.p2_guest_name) {
       p2Guest = String(body.p2_guest_name).trim().slice(0, 24);
       if (!p2Guest) return bad('guest name required');
     }
-    const mine = await env.DB.prepare(
-      `SELECT id FROM queue_parties WHERE status IN ('waiting','playing')
-       AND (p1_user_id = ? OR p2_user_id = ?)`
-    ).bind(user.id, user.id).first();
+    if (p1Guest && p2Guest && p1Guest.toLowerCase() === p2Guest.toLowerCase()) {
+      return bad("both duo slots can't be the same name");
+    }
+    // one party per player: registered by id, guests by nickname
+    const mine = user
+      ? await env.DB.prepare(
+          `SELECT id FROM queue_parties WHERE status IN ('waiting','playing')
+           AND (p1_user_id = ? OR p2_user_id = ?)`
+        ).bind(user.id, user.id).first()
+      : await env.DB.prepare(
+          `SELECT id FROM queue_parties WHERE status IN ('waiting','playing')
+           AND (LOWER(COALESCE(p1_guest_name, '')) = LOWER(?) OR LOWER(COALESCE(p2_guest_name, '')) = LOWER(?))`
+        ).bind(p1Guest, p1Guest).first();
     if (mine) return bad('you are already in the queue', 409);
     const max = await env.DB.prepare(
       'SELECT COALESCE(MAX(position), 0) AS m FROM queue_parties').first();
     const { meta } = await env.DB.prepare(
-      `INSERT INTO queue_parties (format, created_by_user_id, p1_user_id, p2_user_id, p2_guest_name, position, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(format, user.id, user.id, p2UserId, p2Guest, max.m + 1, Date.now()).run();
+      `INSERT INTO queue_parties (format, created_by_user_id, p1_user_id, p1_guest_name, p2_user_id, p2_guest_name, position, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(format, user ? user.id : null, p1UserId, p1Guest, p2UserId, p2Guest, max.m + 1, Date.now()).run();
     await promoteNext(env.DB); // free table -> earliest party starts
-    await audit(env.DB, 'queue_join', user.id, 'party=' + meta.last_row_id + ' ' + format);
+    await audit(env.DB, 'queue_join', user ? user.id : null,
+      'party=' + meta.last_row_id + ' ' + format + (p1Guest ? ' guest=' + p1Guest : ''));
     return json({ ok: true, id: meta.last_row_id }, 201);
   }
 
@@ -612,19 +631,25 @@ async function handleApi(request, env, url) {
 
   m = pathname.match(/^\/api\/queue\/(\d+)$/);
   if (m && method === 'DELETE') {
-    const user = await requireUser(request, env);
+    const user = await currentUser(request, env);
     const id = Number(m[1]);
     const party = await env.DB.prepare('SELECT * FROM queue_parties WHERE id = ?').bind(id).first();
     if (!party) return bad('not found', 404);
-    const member = party.p1_user_id === user.id || party.p2_user_id === user.id;
+    const member = user && (party.p1_user_id === user.id || party.p2_user_id === user.id);
     const admin = await isAdmin(request, env);
-    if (!member && !admin) return bad('not your party', 403);
+    // guests prove ownership by the nickname they joined with
+    const body = await request.json().catch(() => null);
+    const guestName = String(body?.guest_name || '').trim().toLowerCase();
+    const guestLead = !user && !party.p1_user_id && !!party.p1_guest_name &&
+      guestName === party.p1_guest_name.toLowerCase();
+    if (!member && !guestLead && !admin) return bad('not your party', 403);
     await env.DB.batch([
       env.DB.prepare("UPDATE queue_parties SET status = 'skipped' WHERE id = ?").bind(id),
       env.DB.prepare('DELETE FROM skip_votes WHERE party_id = ?').bind(id),
     ]);
     await promoteNext(env.DB); // table seat freed — next party steps up
-    await audit(env.DB, 'queue_leave', user.id, 'party=' + id + (admin ? ' admin=1' : ''));
+    await audit(env.DB, 'queue_leave', user ? user.id : null,
+      'party=' + id + (admin ? ' admin=1' : '') + (guestLead ? ' guest=' + party.p1_guest_name : ''));
     return json({ ok: true });
   }
 
