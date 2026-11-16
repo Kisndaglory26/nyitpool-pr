@@ -307,7 +307,11 @@ async function commitMatch(db, pending) {
     ? (await db.batch(ids.map(id =>
         db.prepare('SELECT * FROM users WHERE id = ?').bind(id)))).map(r => r.results[0])
     : [];
-  const byId = new Map(users.map(u => [u.id, u]));
+  // rate() reads rating/rd/vol — alias the glicko_* columns so commits rate
+  // from each player's CURRENT rating, not a fresh 1500/350
+  const byId = new Map(users.map(u => [u.id, {
+    ...u, rating: u.glicko_rating, rd: u.glicko_rd, vol: u.glicko_vol,
+  }]));
 
   const stmts = [];
   let ratingDelta = null;
@@ -846,10 +850,14 @@ async function handleApi(request, env, url) {
   if (pathname === '/api/matches/submit' && method === 'POST') {
     const user = await requireUser(request, env);
     const body = await request.json().catch(() => null);
-    const matchType = body?.match_type;
     const format = body?.format;
     const winnerTeam = Number(body?.winner_team);
-    if (!['ranked', 'casual'].includes(matchType)) return bad('match_type must be ranked or casual');
+    // matches are always ranked now — casual submissions were removed, so a
+    // stale client can't silently log unrated games
+    if (body?.match_type != null && body.match_type !== 'ranked') {
+      return bad('casual matches are no longer submitted — every match is ranked');
+    }
+    const matchType = 'ranked';
     if (!['1v1', '2v2', '2v1'].includes(format)) return bad('format must be 1v1, 2v2 or 2v1');
     if (![1, 2].includes(winnerTeam)) return bad('winner_team must be 1 or 2');
 
@@ -876,12 +884,10 @@ async function handleApi(request, env, url) {
     const reg1 = t1.filter(s => s.user_id != null).length;
     const reg2 = t2.filter(s => s.user_id != null).length;
     if (!reg1 || !reg2) return bad('each team needs at least one registered player');
-    const hasGuest = slots.some(s => s.user_id == null);
-    const type = hasGuest ? 'casual' : matchType; // guests force casual
 
     const { meta } = await env.DB.prepare(
       'INSERT INTO pending_matches (match_type, format, winner_team, submitted_by_user_id, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(type, format, winnerTeam, user.id, Date.now()).run();
+    ).bind(matchType, format, winnerTeam, user.id, Date.now()).run();
     const pid = meta.last_row_id;
 
     await env.DB.batch(slots.map(s => {
@@ -892,13 +898,13 @@ async function handleApi(request, env, url) {
         s.user_id != null ? null : String(s.guest_name).trim().slice(0, 24), confirmed);
     }));
 
-    await audit(env.DB, 'match_submit', user.id, 'pending=' + pid + ' ' + type + ' ' + format + ' winner=' + winnerTeam);
+    await audit(env.DB, 'match_submit', user.id, 'pending=' + pid + ' ' + matchType + ' ' + format + ' winner=' + winnerTeam);
     const others = slots.filter(s => s.user_id != null && Number(s.user_id) !== user.id);
     if (!others.length) {
       const pending = await env.DB.prepare('SELECT * FROM pending_matches WHERE id = ?').bind(pid).first();
       const res = await commitMatch(env.DB, pending);
       await audit(env.DB, 'match_commit', user.id, 'pending=' + pid + ' auto');
-      return json({ committed: true, match_type: type, rating_delta: res.rating_delta }, 201);
+      return json({ committed: true, match_type: matchType, rating_delta: res.rating_delta }, 201);
     }
     return json({ committed: false, pending_id: pid, awaiting: others.length }, 201);
   }
