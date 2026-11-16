@@ -1415,17 +1415,15 @@ const Hub = (() => {
       b.textContent = '🟢 Queue open — Solo & Duo' + adminTag + span;
     }
     // gate the join form
-    const guestLocked = !!(me && me.guest); // guests browse only — joining needs an account
     const soloBtn = $('#join-format [data-v="solo"]');
     const joinBtn = $('#hub-join .btn-primary');
     soloBtn.disabled = qMode.mode === 'duo-only' || (qKey.required && !qKey.valid);
-    joinBtn.disabled = qMode.mode === 'offline' || (qKey.required && !qKey.valid) || guestLocked;
+    joinBtn.disabled = qMode.mode === 'offline' || (qKey.required && !qKey.valid);
     // QUEUE_KEY gates JOINING only — sign in / sign up stay open
     const locked = qKey.required && !qKey.valid;
     const note = document.getElementById('qr-note');
-    note.hidden = !locked && !guestLocked;
+    note.hidden = !locked;
     if (locked) note.textContent = '📲 Scan the table QR code to join the queue (key lasts 15 min after scanning).';
-    else if (guestLocked) note.textContent = '🎭 Guests can watch the queue — an account (free) lets you join it.';
     $('#join-mate').disabled = $('#join-guest').disabled = joinBtn.disabled;
     const wantSolo = segVal($('#join-format')) === 'solo';
     $('#join-mate').hidden = wantSolo;
@@ -1472,7 +1470,11 @@ const Hub = (() => {
       playing.forEach(p => {
         btns.append(actBtn((p.p1.name.split(' ')[0]) + ' out', async () => {
           if (confirm('Remove ' + p.p1.name + ' from the table? Next in line steps up.')) {
-            await api('/queue/' + p.id, { method: 'DELETE' }); refreshAll();
+            await api('/queue/' + p.id, {
+              method: 'DELETE',
+              body: me && me.guest && !p.p1.registered && p.p1.name === 'Guest: ' + me.nickname
+                ? { guest_name: me.nickname } : undefined,
+            }); refreshAll();
           }
         }));
       });
@@ -1525,7 +1527,10 @@ const Hub = (() => {
     };
 
     waiting.forEach((p, k) => {
-      const mine = me && [p.p1, p.p2].some(x => x && x.registered && x.username === me.username);
+      const mine = me && [p.p1, p.p2].some(x => x && (
+        (x.registered && x.username === me.username)
+        || (me.guest && !x.registered && x.name === 'Guest: ' + me.nickname)
+      ));
       const tr = el('tr');
       tr.append(el('td', 'pos', String(k + 2)));
       const players = el('td');
@@ -1546,7 +1551,11 @@ const Hub = (() => {
       const actCell = el('td', 'act-cell');
       if (mine) {
         actCell.append(actBtn('Leave', async () => {
-          await api('/queue/' + p.id, { method: 'DELETE' }); refreshAll();
+          await api('/queue/' + p.id, {
+            method: 'DELETE',
+            body: me.guest ? { guest_name: me.nickname } : undefined,
+          });
+          refreshAll();
         }));
       } else if (!p.p2 && p.format === 'duo' && me && !me.guest) {
         actCell.append(actBtn('Team up', async () => {
@@ -1574,6 +1583,7 @@ const Hub = (() => {
     const mate = mateEl.value.trim();
     const guest = $('#join-guest').value.trim();
     const body = { format: segVal($('#join-format')) };
+    if (me.guest) body.p1_guest_name = me.nickname; // guests join under their nickname
     if (mate) {
       if (!mateEl.dataset.uid) return alert('Teammate not found — pick one from the suggestions.');
       body.p2_user_id = Number(mateEl.dataset.uid);
