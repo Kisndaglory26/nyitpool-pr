@@ -186,7 +186,7 @@ async function promoteNext(db) {
 
 const PARTY_SELECT = `
   SELECT p.id, p.format, p.status, p.position, p.created_at,
-         p.created_by_user_id, p.p1_user_id, p.p2_user_id, p.p2_guest_name,
+         p.created_by_user_id, p.p1_user_id, p.p1_guest_name, p.p2_user_id, p.p2_guest_name,
          u1.nickname AS p1_nick, u1.username AS p1_user, u1.glicko_rating AS p1_elo,
          u2.nickname AS p2_nick, u2.username AS p2_user, u2.glicko_rating AS p2_elo,
          (SELECT COUNT(*) FROM skip_votes v WHERE v.party_id = p.id) AS votes
@@ -197,15 +197,35 @@ const PARTY_SELECT = `
 
 function shapeParty(row) {
   const mk = (uid, nick, user, elo, guest) => uid
-    ? { name: nick, username: user, elo: Math.round(elo), registered: true }
+    ? { id: uid, name: nick, username: user, elo: Math.round(elo), registered: true }
     : guest
-      ? { name: `Guest: ${guest}`, username: null, elo: null, registered: false }
+      ? { id: null, name: `Guest: ${guest}`, username: null, elo: null, registered: false }
       : null;
   return {
-    id: row.id, format: row.format, status: row.status, votes: row.votes,
+    id: row.id, format: row.format, status: row.status, votes: row.votes, position: row.position,
     p1: mk(row.p1_user_id, row.p1_nick, row.p1_user, row.p1_elo, row.p1_guest_name),
     p2: mk(row.p2_user_id, row.p2_nick, row.p2_user, row.p2_elo, row.p2_guest_name),
   };
+}
+
+/* admin roster edits: resolve a slot spec ({user_id}|{guest_name}|null) to columns */
+const slotDesc = s => (s.userId ? 'u' + s.userId : (s.guest ? '"' + s.guest + '"' : 'empty'));
+async function resolveSlot(db, spec) {
+  if (spec == null) return { userId: null, guest: null };
+  if (spec.user_id != null) {
+    const u = await db.prepare('SELECT id FROM users WHERE id = ?').bind(Number(spec.user_id)).first();
+    if (!u) throw new HttpError(400, 'player not found');
+    return { userId: u.id, guest: null };
+  }
+  const g = String(spec.guest_name || '').trim().slice(0, 24);
+  return g ? { userId: null, guest: g } : { userId: null, guest: null };
+}
+/* a registered player may only sit in ONE live party */
+async function userInLiveParty(db, userId, excludeId) {
+  return db.prepare(
+    `SELECT id FROM queue_parties WHERE status IN ('waiting','playing')
+     AND id != ? AND (p1_user_id = ? OR p2_user_id = ?)`
+  ).bind(excludeId, userId, userId).first();
 }
 
 /* ============================ audit log ============================ */
@@ -606,6 +626,97 @@ async function handleApi(request, env, url) {
     await promoteNext(env.DB); // table seat freed — next party steps up
     await audit(env.DB, 'queue_leave', user.id, 'party=' + id + (admin ? ' admin=1' : ''));
     return json({ ok: true });
+  }
+
+  /* ---------- admin: party roster edits + manual table control ---------- */
+  m = pathname.match(/^\/api\/admin\/parties\/(\d+)$/);
+  if (m && method === 'PUT') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    const party = await env.DB.prepare(
+      "SELECT * FROM queue_parties WHERE id = ? AND status IN ('waiting','playing')"
+    ).bind(Number(m[1])).first();
+    if (!party) return bad('party not found (or no longer live)', 404);
+    const body = await request.json().catch(() => null);
+    let s1, s2;
+    try {
+      s1 = await resolveSlot(env.DB, body?.p1);
+      s2 = await resolveSlot(env.DB, body?.p2);
+    } catch (e) { return bad(e.message); }
+    if (!s1.userId && !s1.guest && !s2.userId && !s2.guest) {
+      return bad('party needs at least one player');
+    }
+    if (s1.userId && s1.userId === s2.userId) return bad("can't put the same player on both sides");
+    for (const s of [s1, s2]) {
+      if (s.userId) {
+        const other = await userInLiveParty(env.DB, s.userId, party.id);
+        if (other) return bad(`player is already in party #${other.id} — remove them there first`, 409);
+      }
+    }
+    const format = body?.format != null ? body.format : ((s2.userId || s2.guest) ? 'duo' : party.format);
+    if (!['solo', 'duo'].includes(format)) return bad('format must be solo or duo');
+    if (format === 'solo' && (s2.userId || s2.guest)) return bad('solo parties have no second player');
+    await env.DB.prepare(
+      `UPDATE queue_parties SET format = ?, p1_user_id = ?, p1_guest_name = ?, p2_user_id = ?, p2_guest_name = ?
+       WHERE id = ?`
+    ).bind(format, s1.userId, s1.guest, s2.userId, s2.guest, party.id).run();
+    await audit(env.DB, 'admin_party_edit', null,
+      `party=${party.id} ${format} p1=${slotDesc(s1)} p2=${slotDesc(s2)}`);
+    return json({ ok: true, id: party.id, format });
+  }
+
+  if (pathname === '/api/admin/parties/reorder' && method === 'POST') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    const body = await request.json().catch(() => null);
+    const id = Number(body?.id);
+    const direction = body?.direction;
+    if (!['up', 'down'].includes(direction)) return bad('direction must be up or down');
+    const rows = (await env.DB.prepare(
+      "SELECT id, position FROM queue_parties WHERE status = 'waiting' ORDER BY position, id"
+    ).all()).results;
+    const i = rows.findIndex(r => r.id === id);
+    if (i === -1) return bad('party is not waiting in the queue', 400);
+    const j = direction === 'up' ? i - 1 : i + 1;
+    if (j >= 0 && j < rows.length) {
+      await env.DB.batch([
+        env.DB.prepare('UPDATE queue_parties SET position = ? WHERE id = ?').bind(rows[j].position, rows[i].id),
+        env.DB.prepare('UPDATE queue_parties SET position = ? WHERE id = ?').bind(rows[i].position, rows[j].id),
+      ]);
+      await audit(env.DB, 'admin_party_reorder', null, `party=${id} ${direction} (swap with party=${rows[j].id})`);
+    }
+    return json({ ok: true, id });
+  }
+
+  m = pathname.match(/^\/api\/admin\/parties\/(\d+)\/promote$/);
+  if (m && method === 'POST') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    const party = await env.DB.prepare(
+      "SELECT * FROM queue_parties WHERE id = ? AND status = 'waiting'"
+    ).bind(Number(m[1])).first();
+    if (!party) return bad('party not found (or not waiting)', 404);
+    const { n } = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM queue_parties WHERE status = 'playing'").first();
+    if (n >= 2) return bad('table is full — take a party off first', 409);
+    await env.DB.prepare("UPDATE queue_parties SET status = 'playing' WHERE id = ?").bind(party.id).run();
+    await audit(env.DB, 'admin_party_promote', null, 'party=' + party.id);
+    return json({ ok: true, id: party.id });
+  }
+
+  m = pathname.match(/^\/api\/admin\/parties\/(\d+)\/demote$/);
+  if (m && method === 'POST') {
+    if (!(await isAdmin(request, env))) return bad('admin pin required', 403);
+    const party = await env.DB.prepare(
+      "SELECT * FROM queue_parties WHERE id = ? AND status = 'playing'"
+    ).bind(Number(m[1])).first();
+    if (!party) return bad('party not found (or not playing)', 404);
+    const max = await env.DB.prepare(
+      'SELECT COALESCE(MAX(position), 0) AS m FROM queue_parties').first();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE queue_parties SET status = 'waiting', position = ? WHERE id = ?")
+        .bind(max.m + 1, party.id),
+      env.DB.prepare('DELETE FROM skip_votes WHERE party_id = ?').bind(party.id),
+    ]);
+    await audit(env.DB, 'admin_party_demote', null, 'party=' + party.id + ' to back of line');
+    return json({ ok: true, id: party.id });
   }
 
   /* ---------- match logging & confirmation ---------- */
