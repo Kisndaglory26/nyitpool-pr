@@ -250,7 +250,7 @@
   .q-table .pos{color:var(--muted);font-weight:800;width:30px}
   .q-table .fmt-cell{width:52px}
   .q-table .skip-cell{width:78px}
-  .q-table .act-cell{width:70px;text-align:right}
+  .q-table .act-cell{width:100px;text-align:right}
   .q-table .act-cell .btn-ghost,.q-table .skip-cell .btn-ghost{padding:6px 9px;font-size:.75rem}
   .pline{display:flex;align-items:baseline;gap:8px;min-width:0;max-width:46vw;overflow:hidden}
   .pline b{font-weight:800;flex-shrink:0;max-width:45%;overflow:hidden;text-overflow:ellipsis}
@@ -858,6 +858,11 @@
 
       <h4 class="board-h">Players</h4>
       <div class="hist-wrap"><table class="q-table" id="adm-players"></table></div>
+      <div class="acct-row">
+        <button id="adm-recalc" class="btn-ghost" type="button">↺ Recalculate all ratings</button>
+        <span id="recalc-msg" class="fine"></span>
+      </div>
+      <p class="fine">Rebuilds everyone's Glicko rating and W–L record from the full match history — use after bulk history fixes.</p>
 
       <h4 class="board-h">Queue access QR</h4>
       <div id="adm-qr" class="adm-qr"></div>
@@ -1301,6 +1306,16 @@ const Hub = (() => {
       await AdminPage.refresh();
     } catch (ex) { alert(ex.message); }
   });
+  $('#adm-recalc').addEventListener('click', async () => {
+    if (!confirm('Recalculate every player\'s Glicko rating and W–L record from the full match history?')) return;
+    const msg = $('#recalc-msg');
+    msg.textContent = 'Recalculating…';
+    try {
+      const r = await api('/admin/recalc-ratings', { method: 'POST' });
+      msg.textContent = '✓ Recalculated ' + r.users + ' players';
+      await AdminPage.refresh();
+    } catch (ex) { msg.textContent = ex.message; }
+  });
 
   /* ---------- tabs ---------- */
   $$('.hub-tabs button').forEach(b => b.addEventListener('click', () => {
@@ -1737,6 +1752,12 @@ const Hub = (() => {
             await api('/admin/matches/' + m.id, { method: 'PUT', body: { winner_team: to } });
             refreshHistory();
           }, 'Flip winner'));
+          cell.append(actBtn(m.match_type === 'casual' ? '→R' : '→C', async () => {
+            const to = m.match_type === 'casual' ? 'ranked' : 'casual';
+            if (!confirm('Convert match #' + m.id + ' from ' + m.match_type + ' to ' + to + '? All ratings & W-L are recomputed from history.')) return;
+            await api('/admin/matches/' + m.id, { method: 'PUT', body: { match_type: to } });
+            refreshHistory();
+          }, 'Switch match type'));
           cell.append(actBtn('✕', async () => {
             if (!confirm('Delete match #' + m.id + ' from history? All ratings & W-L are recomputed as if it never happened.')) return;
             await api('/admin/matches/' + m.id, { method: 'DELETE' });
