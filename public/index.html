@@ -744,10 +744,6 @@
 
         <div id="tab-log" class="hub-tab" hidden>
           <form id="log-form" autocomplete="off">
-            <div class="log-row seg" id="log-type">
-              <button type="button" data-v="ranked" class="on">Ranked</button>
-              <button type="button" data-v="casual">Casual</button>
-            </div>
             <div class="log-row seg" id="log-format">
               <button type="button" data-v="1v1" class="on">1v1</button>
               <button type="button" data-v="2v2">2v2</button>
@@ -1338,7 +1334,7 @@ const Hub = (() => {
       if (root.id === 'join-format') renderHours();
     }));
   }
-  ['#join-format', '#log-type', '#log-format', '#log-winner'].forEach(s => wireSeg($(s)));
+  ['#join-format', '#log-format', '#log-winner'].forEach(s => wireSeg($(s)));
 
   /* ---------- shared player search (autocomplete picker) ----------
      Used by: queue teammate, match form slots, history filter.
@@ -1686,7 +1682,7 @@ const Hub = (() => {
       const r = await api('/matches/submit', {
         method: 'POST',
         body: {
-          match_type: segVal($('#log-type')),
+          match_type: 'ranked',
           format: segVal($('#log-format')),
           winner_team: Number(segVal($('#log-winner'))),
           teams,
