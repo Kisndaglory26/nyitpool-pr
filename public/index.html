@@ -397,30 +397,54 @@
     padding:14px clamp(14px,4vw,24px) calc(14px + env(safe-area-inset-bottom));
     max-width:680px;margin:0 auto;
   }
-  .hub-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .hub-title{font-weight:800;font-size:1.15rem;letter-spacing:.02em}
   .hist-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
   .hist-wrap .q-table th{position:static}
+  /* ---------- admin (mockup port) ---------- */
   .adm-wrap{
     flex:1;width:100%;min-height:100dvh;display:flex;flex-direction:column;gap:12px;
     padding:14px clamp(14px,4vw,24px) calc(14px + env(safe-area-inset-bottom));
-    max-width:860px;margin:0 auto;
+    max-width:680px;margin:0 auto;
   }
-  .adm-wrap .sched-grid{max-width:480px}
   #adm-pending{display:flex;flex-direction:column;gap:8px}
   .adm-sub-h{font-size:.7rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--danger);margin-top:6px}
-  .adm-qr{display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px;
-    background:#fff;border-radius:16px;max-width:320px}
+  .modegrid4{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .mbtn{
+    border:1px solid var(--line2);border-radius:var(--r-md);padding:11px 8px;text-align:center;
+    font-weight:800;font-size:.85rem;color:var(--muted);transition:.15s;background:transparent;
+  }
+  .mbtn small{display:block;font-weight:600;font-size:.7rem;color:var(--faint);margin-top:2px}
+  .mbtn.on{border-color:var(--felt);color:var(--felt);background:color-mix(in srgb,var(--felt) 10%,transparent)}
+  .hours4{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .hours4 label{display:flex;flex-direction:column;gap:5px;font-size:.66rem;font-weight:800;letter-spacing:.1em;color:var(--muted)}
+  .hours4 input{
+    background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-sm);
+    padding:9px;color:var(--text);color-scheme:dark;font-weight:700;width:100%;
+  }
+  .audit{
+    display:flex;gap:10px;align-items:baseline;padding:9px 2px;border-bottom:1px solid var(--line);
+    font-size:.8rem;
+  }
+  .audit:last-child{border-bottom:none}
+  .audit .t{color:var(--felt);font-weight:800;font-size:.7rem;flex-shrink:0}
+  .audit .d{color:var(--muted);flex:1;min-width:0}
+  .audit .w{color:var(--faint);font-size:.68rem;flex-shrink:0;font-variant-numeric:tabular-nums}
+  table.simple{width:100%;border-collapse:collapse;font-size:.82rem}
+  table.simple th{
+    text-align:left;font-size:.62rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);padding:7px 8px;border-bottom:1px solid var(--line);
+  }
+  table.simple td{padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.simple tr:last-child td{border-bottom:none}
+  table.simple .at{color:var(--muted);font-size:.78rem}
+  table.simple .elo-cell{color:var(--felt);font-weight:800}
+  .adm-qr{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px;
+    background:#fff;border-radius:var(--r-lg);max-width:320px}
   .adm-qr img{width:240px;height:240px;image-rendering:pixelated}
-  .adm-qr .qr-url{color:#0b0f14;font-size:.75rem;word-break:break-all;text-align:center;font-weight:700}
+  .adm-qr .qr-url{color:#0a0f13;font-size:.68rem;font-weight:800;word-break:break-all;text-align:center}
   #hub-main{display:flex;flex-direction:column;gap:12px}
   .fmt{
     display:inline-block;font-size:.62rem;font-weight:800;letter-spacing:.12em;color:var(--muted);
     border:1px solid var(--line);border-radius:6px;padding:2px 7px;vertical-align:middle;
-  }
-  .chip-now{
-    font-size:.65rem;font-weight:800;letter-spacing:.16em;color:var(--ok);
-    border:1px solid var(--ok);border-radius:999px;padding:4px 12px;
   }
   .q-table{width:100%;border-collapse:collapse;font-size:.9rem}
   .q-table th{
@@ -439,38 +463,25 @@
   .q-empty .big{display:block;font-size:clamp(1.3rem,4vw,1.9rem);font-weight:800;color:var(--text);margin-bottom:6px}
   #log-form{display:flex;flex-direction:column;gap:12px}
   #log-msg{margin:0}
-  .board-h{margin:14px 0 0;font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
   .btns{display:flex;gap:8px;flex-wrap:wrap}
-  .pend-detail{display:flex;flex-direction:column;gap:6px}
-  .pend-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.72rem;font-weight:800;
-    letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-  .pend-id{color:var(--text)}
-  .pend-flag{color:var(--danger);border:1px solid var(--danger);border-radius:999px;padding:2px 9px}
-  .pend-team{display:flex;align-items:baseline;gap:10px;padding:7px 10px;border-radius:10px;
-    background:var(--panel2);border:1px solid transparent}
-  .pend-team.win{border-color:var(--ok);background:rgba(52,211,153,.09)}
-  .pend-names{flex:1;min-width:0;font-weight:700;font-size:.92rem;white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis;color:var(--text)}
-  .pend-won{flex-shrink:0;font-size:.62rem;font-weight:900;letter-spacing:.12em;color:var(--ok)}
   .pend-meta{font-size:.75rem;color:var(--muted)}
-  .aparty{background:var(--panel2);border:1px solid var(--line);border-radius:14px;
-    padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+  .aparty{border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel2);
+    padding:12px;display:flex;flex-direction:column;gap:9px}
   .aparty.playing{border-color:var(--ok)}
-  .aparty-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.72rem;
-    font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-  .aparty .slot-lbl{font-size:.62rem;font-weight:800;letter-spacing:.12em;
-    color:var(--muted);width:56px;flex-shrink:0;text-align:right;text-transform:uppercase}
+  .aparty .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .aslot{display:flex;gap:8px;align-items:center}
+  .aslot .lb{width:26px;text-align:right;font-size:.62rem;font-weight:900;color:var(--faint);flex-shrink:0}
+  .aslot input{
+    flex:1;min-width:0;background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-sm);
+    padding:9px 11px;color:var(--text);font-weight:600;
+  }
+  .aslot .pick-slot{flex:1;min-width:0}
+  .aslot .rm-btn{width:32px;height:32px;padding:0}
   .acct-row .pick-slot{flex:1;min-width:0}
-  .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .mode-grid button{padding:10px 12px;line-height:1.35;text-align:center}
-  .mode-grid button.on{color:var(--accent);border-color:var(--accent)}
   .acct-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .acct-row .name-input{flex:1 1 110px;min-width:0;font-size:.9rem}
   .acct-row .pin-in{flex:0 1 100px}
   #drawer-account{display:flex;flex-direction:column;gap:10px}
-  .sched-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .sched-grid label{display:flex;flex-direction:column;gap:4px;font-size:.68rem;font-weight:800;letter-spacing:.1em;color:var(--muted)}
-  .sched-grid input{color-scheme:dark}
 
   /* ---------- screen 2: config (mockup: accent-header team cards) ---------- */
   #team-cards{display:flex;flex-direction:column;gap:14px}
@@ -929,54 +940,58 @@
   <!-- ============ Screen 1d: admin page ============ -->
   <section id="screen-adminpage" class="screen">
     <div class="adm-wrap">
-      <div class="hub-head">
-        <button id="adm-back" class="btn-ghost" type="button">← Back</button>
-        <span class="hub-title">Admin</span>
+      <div class="topbar">
+        <button id="adm-back" class="btn ghost tiny" type="button">← Back</button>
+        <h2>Admin</h2>
+        <span class="spacer"></span>
         <span class="badge">PIN UNLOCKED</span>
       </div>
 
-      <h4 class="board-h">Queue status</h4>
-      <div class="mode-grid" id="admin-modes">
-        <button class="btn-ghost" data-m="auto" type="button">🕰 Auto<br><span class="fine">time windows</span></button>
-        <button class="btn-ghost" data-m="open" type="button">🟢 Open<br><span class="fine">solo + duo</span></button>
-        <button class="btn-ghost" data-m="duo-only" type="button">🕒 Duo only<br><span class="fine">no solos</span></button>
-        <button class="btn-ghost" data-m="offline" type="button">⛔ Offline<br><span class="fine">clears queue</span></button>
+      <div class="sec-h">Queue status</div>
+      <div class="modegrid4" id="admin-modes">
+        <button class="mbtn" data-m="auto" type="button">🕰 Auto<small>time windows</small></button>
+        <button class="mbtn" data-m="open" type="button">🟢 Open<small>solo + duo</small></button>
+        <button class="mbtn" data-m="duo-only" type="button">🕒 Duo only<small>no solos</small></button>
+        <button class="mbtn" data-m="offline" type="button">⛔ Offline<small>clears queue</small></button>
       </div>
-      <h4 class="board-h">Queue hours (ET)</h4>
-      <div class="sched-grid">
-        <label>Open<input id="s-open" class="name-input" type="time"></label>
-        <label>Duo-only from<input id="s-duo_start" class="name-input" type="time"></label>
-        <label>Duo-only until<input id="s-duo_end" class="name-input" type="time"></label>
-        <label>Close<input id="s-close" class="name-input" type="time"></label>
-      </div>
-      <p class="fine">Duo window from = until disables the solo restriction.</p>
-      <div class="acct-row">
-        <button id="s-save" class="btn-primary" type="button">Save hours</button>
-        <button id="s-wipe" class="btn-ghost armed" type="button">Wipe queue now</button>
-      </div>
-      <p id="sched-msg" class="fine"></p>
 
-      <h4 class="board-h">Live queue parties</h4>
-      <p class="fine">Fix rosters — search a registered player or type a guest name. Reorder the line and set who is on the table.</p>
-      <button id="adm-add-party" class="add-btn" type="button">+ Add blank party slot</button>
-      <div id="adm-parties"></div>
+      <div class="sec-h">Queue hours (ET)</div>
+      <div class="card tight">
+        <div class="hours4">
+          <label>Open<input id="s-open" type="time"></label>
+          <label>Duo from<input id="s-duo_start" type="time"></label>
+          <label>Duo until<input id="s-duo_end" type="time"></label>
+          <label>Close<input id="s-close" type="time"></label>
+        </div>
+        <p class="fine" style="margin:10px 0 0">Duo window from = until disables the solo restriction.</p>
+        <div class="btns" style="margin-top:10px">
+          <button id="s-save" class="btn primary tiny" type="button">Save hours</button>
+          <button id="s-wipe" class="btn danger tiny" type="button">Wipe queue now</button>
+        </div>
+        <p id="sched-msg" class="fine" style="margin:10px 0 0"></p>
+      </div>
 
-      <h4 class="board-h">Pending &amp; disputed matches</h4>
+      <div class="sec-h">Live queue parties</div>
+      <p class="fine" style="margin:-6px 0 0">Fix rosters — search a registered player or type a guest name. Reorder the line and set who is on the table.</p>
+      <button id="adm-add-party" class="btn ghost tiny" type="button" style="align-self:flex-start;border-style:dashed">+ Add blank party slot</button>
+      <div id="adm-parties" style="display:flex;flex-direction:column;gap:10px"></div>
+
+      <div class="sec-h">Pending &amp; disputed matches</div>
       <div id="adm-pending"></div>
 
-      <h4 class="board-h">Players</h4>
-      <div class="hist-wrap"><table class="q-table" id="adm-players"></table></div>
+      <div class="sec-h">Players</div>
+      <div class="hist-wrap"><table class="simple" id="adm-players"></table></div>
       <div class="acct-row">
-        <button id="adm-recalc" class="btn-ghost" type="button">↺ Recalculate all ratings</button>
+        <button id="adm-recalc" class="btn tiny" type="button"
+          title="Rebuilds everyone's Glicko rating and W–L record from the full match history — use after bulk history fixes.">↺ Recalculate all ratings</button>
         <span id="recalc-msg" class="fine"></span>
       </div>
-      <p class="fine">Rebuilds everyone's Glicko rating and W–L record from the full match history — use after bulk history fixes.</p>
 
-      <h4 class="board-h">Queue access QR</h4>
+      <div class="sec-h">Queue access QR</div>
       <div id="adm-qr" class="adm-qr"></div>
 
-      <h4 class="board-h">Audit log</h4>
-      <div class="hist-wrap"><table class="q-table" id="adm-audit"></table></div>
+      <div class="sec-h">Audit log</div>
+      <div class="card tight" id="adm-audit"></div>
     </div>
   </section>
 
@@ -1943,29 +1958,28 @@ const Hub = (() => {
   }
 
   /* ---------- drawer: account + my confirmations ---------- */
-  /* Full detail for a pending/disputed match: format, both rosters, winner, who's outstanding. */
+  /* Full detail for a pending/disputed match: type/format chips, both rosters, winner, who's outstanding. */
   function pendDetail(n) {
-    const box = el('div', 'pend-detail');
+    const frag = document.createDocumentFragment();
 
-    const top = el('div', 'pend-top');
-    top.append(el('span', 'pend-id', '#' + n.id));
-    top.append(el('span', 'fmt', n.match_type.toUpperCase()));
-    top.append(el('span', 'fmt', n.format));
-    if (n.status === 'disputed') top.append(el('span', 'pend-flag', '⚠ DISPUTED'));
-    box.append(top);
+    const hd = el('div', 'hd');
+    hd.append(el('span', null, '#' + n.id));
+    hd.append(el('span', 'chip' + (n.match_type === 'ranked' ? ' gold' : ''), n.match_type.toUpperCase()));
+    hd.append(el('span', 'chip', n.format.toUpperCase()));
+    if (n.status === 'disputed') hd.append(el('span', 'chip danger', '⚠ DISPUTED'));
+    frag.append(hd);
 
     [1, 2].forEach(team => {
       const names = team === 1 ? n.team1 : n.team2;
-      const row = el('div', 'pend-team' + (n.winner_team === team ? ' win' : ''));
-      row.append(el('span', 'lbl', 'TEAM ' + team));
-      row.append(el('span', 'pend-names', names || '—'));
-      if (n.winner_team === team) row.append(el('span', 'pend-won', 'WON'));
-      box.append(row);
+      const row = el('div', 'trow' + (n.winner_team === team ? ' win' : ''));
+      row.append(el('span', 'who', names || '—'));
+      if (n.winner_team === team) row.append(el('span', 'won', 'WON'));
+      frag.append(row);
     });
 
-    if (n.awaiting_names) box.append(el('div', 'pend-meta', 'Waiting on: ' + n.awaiting_names));
-    if (n.confirmed_names) box.append(el('div', 'pend-meta', 'Confirmed: ' + n.confirmed_names));
-    return box;
+    if (n.awaiting_names) frag.append(el('div', 'pend-meta', 'Waiting on: ' + n.awaiting_names));
+    if (n.confirmed_names) frag.append(el('div', 'pend-meta', 'Confirmed: ' + n.confirmed_names));
+    return frag;
   }
 
   async function refreshDrawer() {
@@ -2046,7 +2060,11 @@ const Hub = (() => {
       }
       rows.forEach(cells => {
         const tr = el('tr');
-        cells.forEach(c => tr.append(el('td', null, c)));
+        cells.forEach(c => {
+          const td = el('td');
+          if (c instanceof Node) td.append(c); else td.textContent = c;
+          tr.append(td);
+        });
         tbody.append(tr);
       });
       t.append(thead, tbody);
@@ -2061,9 +2079,7 @@ const Hub = (() => {
         if (inp && qMode.schedule[k]) inp.value = qMode.schedule[k];
       });
       $$('#admin-modes button').forEach(b => {
-        const active = b.dataset.m === (qMode.override || 'auto')
-          || (b.dataset.m !== 'auto' && !qMode.override && qMode.mode === b.dataset.m);
-        b.classList.toggle('on', active);
+        b.classList.toggle('on', b.dataset.m === (qMode.override || 'auto'));
       });
 
       // live queue parties — roster editors + manual table control
@@ -2072,16 +2088,15 @@ const Hub = (() => {
       const live = (parties || []).filter(p => p.status === 'playing' || p.status === 'waiting');
       if (!live.length) ap.append(el('div', 'fine', 'Queue is empty.'));
       const slotBody = row => {
-        const inp = $('.name-input', row);
+        const inp = $('input', row);
         const v = inp.value.trim();
         if (inp.dataset.uid) return { user_id: Number(inp.dataset.uid) };
         return v ? { guest_name: v } : null;
       };
       const mkSlotRow = (label, player) => {
-        const row = el('div', 'acct-row');
-        row.append(el('span', 'slot-lbl', label));
+        const row = el('div', 'aslot');
+        row.append(el('span', 'lb', label));
         const inp = document.createElement('input');
-        inp.className = 'name-input';
         inp.maxLength = 24;
         inp.placeholder = 'search player / guest name';
         inp.value = player ? (player.registered ? player.name : player.name.replace(/^Guest: /, '')) : '';
@@ -2097,10 +2112,10 @@ const Hub = (() => {
       };
       live.forEach(p => {
         const card = el('div', 'aparty' + (p.status === 'playing' ? ' playing' : ''));
-        const top = el('div', 'aparty-top');
-        top.append(el('span', p.status === 'playing' ? 'chip-now' : 'fmt',
+        const top = el('div', 'hd');
+        top.append(el('span', p.status === 'playing' ? 'chip ok' : 'chip',
           p.status === 'playing' ? 'ON THE TABLE' : '#' + p.position + ' IN LINE'));
-        top.append(el('span', 'fmt', p.format.toUpperCase()));
+        top.append(el('span', 'chip', p.format.toUpperCase()));
         card.append(top);
 
         const r1 = mkSlotRow('P1', p.p1);
@@ -2125,26 +2140,26 @@ const Hub = (() => {
         const save = async fn => { await fn(); await refresh(); refreshAll(); };
         btns.append(actBtn('💾 Save roster', async () => {
           await save(() => api('/admin/parties/' + p.id, { method: 'PUT', body: rosterBody() }));
-        }));
+        }, 'Save roster', 'btn tiny'));
         if (p.status === 'playing') {
           btns.append(actBtn('⏬ Back to line', async () => {
             await save(() => api('/admin/parties/' + p.id + '/demote', { method: 'POST' }));
-          }));
+          }, 'Back to line', 'btn tiny'));
         } else {
           btns.append(actBtn('⬆', async () => {
             await save(() => api('/admin/parties/reorder', { method: 'POST', body: { id: p.id, direction: 'up' } }));
-          }, 'Move up'));
+          }, 'Move up', 'btn tiny'));
           btns.append(actBtn('⬇', async () => {
             await save(() => api('/admin/parties/reorder', { method: 'POST', body: { id: p.id, direction: 'down' } }));
-          }, 'Move down'));
+          }, 'Move down', 'btn tiny'));
           btns.append(actBtn('▶ Put on table', async () => {
             await save(() => api('/admin/parties/' + p.id + '/promote', { method: 'POST' }));
-          }));
+          }, 'Put on table', 'btn tiny primary'));
         }
         btns.append(actBtn('✕ Remove', async () => {
           if (!confirm('Remove party #' + p.id + ' from the queue?')) return;
           await save(() => api('/queue/' + p.id, { method: 'DELETE' }));
-        }, 'Remove party'));
+        }, 'Remove party', 'btn tiny danger'));
         card.append(btns);
         ap.append(card);
       });
@@ -2163,12 +2178,12 @@ const Hub = (() => {
           btns.append(actBtn('⚡ Approve', async () => {
             await api('/matches/' + n.id + '/admin-approve', { method: 'POST' });
             refreshAll(); refresh(); refreshHistory();
-          }));
+          }, 'Approve match', 'btn primary tiny'));
           btns.append(actBtn('✕ Reject', async () => {
             if (!confirm('Reject match #' + n.id + '? It will be discarded.')) return;
             await api('/admin/matches/' + n.id + '/reject', { method: 'POST' });
             refreshAll(); refresh();
-          }));
+          }, 'Reject match', 'btn danger tiny'));
           card.append(btns);
           return card;
         };
@@ -2215,21 +2230,32 @@ const Hub = (() => {
       try {
         const players = (await api('/admin/players')).players;
         fillTable('#adm-players',
-          ['Player', 'Elo', 'Ranked', 'Casual', 'Joined'],
-          players.map(u => [
-            u.nickname + ' @' + u.username,
-            Math.round(u.glicko_rating),
-            u.ranked_wins + '–' + u.ranked_losses,
-            u.casual_wins + '–' + u.casual_losses,
-            fmtWhen(u.created_at),
-          ]));
+          ['Player', 'Elo', 'Ranked', 'Joined'],
+          players.map(u => {
+            const nm = document.createDocumentFragment();
+            nm.append(el('b', null, u.nickname));
+            nm.append(el('small', 'at', ' @' + u.username));
+            return [
+              nm,
+              el('span', 'elo-cell mono', String(Math.round(u.glicko_rating))),
+              u.ranked_wins + '–' + u.ranked_losses,
+              fmtWhen(u.created_at),
+            ];
+          }));
       } catch { /* pin */ }
 
       try {
         const log = (await api('/admin/audit')).audit;
-        fillTable('#adm-audit',
-          ['When', 'Event', 'Actor', 'Detail'],
-          log.map(a => [fmtWhen(a.at), a.type, a.actor || 'system', a.detail]));
+        const feed = $('#adm-audit');
+        feed.innerHTML = '';
+        if (!log.length) feed.append(el('div', 'fine', 'Nothing yet.'));
+        log.forEach(a => {
+          const row = el('div', 'audit');
+          row.append(el('span', 't', a.type));
+          row.append(el('span', 'd', (a.actor && a.actor !== 'system' ? a.actor + ' — ' : '') + a.detail));
+          row.append(el('span', 'w', fmtWhen(a.at)));
+          feed.append(row);
+        });
       } catch { /* pin */ }
     }
 
