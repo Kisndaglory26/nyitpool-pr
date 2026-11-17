@@ -207,7 +207,7 @@
 
   /* queue: join card + QR lock */
   .joincard{display:flex;flex-direction:column;gap:9px;position:relative;overflow:hidden}
-  .joincard .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .joincard .row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px} /* zero-min tracks: long typed values can't blow out the grid */
   .joincard input{
     background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-md);
     padding:11px 12px;color:var(--text);font-weight:600;width:100%;
@@ -306,7 +306,10 @@
   .hist .adm-tools{display:flex;gap:6px;margin-top:4px}
 
   /* ranks: podium + rows */
-  .podium{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end}
+  /* minmax(0,1fr): plain 1fr tracks can't shrink below a card's min-content, so one
+     long nickname (e.g. "shaanPatel11") blew the grid past the viewport and clipped
+     the right card on iPhone Safari. Zero min → equal thirds, names ellipsize. */
+  .podium{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:end}
   .pod{
     border:1px solid var(--line);border-radius:var(--r-lg);padding:12px 8px;text-align:center;
     background:linear-gradient(180deg,var(--panel),var(--panel2));
