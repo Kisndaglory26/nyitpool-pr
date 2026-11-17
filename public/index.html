@@ -909,7 +909,7 @@
 
         <!-- RANKS PANE -->
         <div id="tab-board" class="pane" data-pane="board">
-          <p class="board-note"><b>Still in placement?</b> Your RD is greater than 100, meaning your performance is inconsistent.</p>
+          <p class="board-note"><b>Wondering what RD is?</b> RD is rating deviation — it's how much your rating is expected to swing. A high RD means inconsistent results so far; it shrinks as you play more games.</p>
           <div id="board-podium" class="podium" hidden></div>
           <div id="board-list" style="display:flex;flex-direction:column;gap:10px"></div>
           <p class="fine" style="text-align:center;margin:0">Glicko-2 · ratings update after every confirmed ranked match</p>
@@ -1993,7 +1993,7 @@ const Hub = (() => {
 
   /* ---------- tab 3: leaderboard ---------- */
   const tier = (r, rd, games) =>
-    rd > 110 || games < 5 ? 'Placement'
+    games < 10 ? 'Placement'
     : r >= 1700 ? '8-Ball Elite'
     : r >= 1550 ? 'Rack Shark'
     : r >= 1400 ? 'Table Regular'
@@ -2036,8 +2036,8 @@ const Hub = (() => {
         const elo = el('div', 'elo', String(Math.round(u.glicko_rating)) + ' ');
         elo.append(el('small', null, '± ' + Math.round(u.glicko_rd)));
         nums.append(elo);
-        nums.append(el('small', null, games < 5
-          ? (5 - games) + ' placement game' + (5 - games === 1 ? '' : 's') + ' left'
+        nums.append(el('small', null, games < 10
+          ? (10 - games) + ' placement game' + (10 - games === 1 ? '' : 's') + ' left'
           : 'C ' + u.casual_wins + '–' + u.casual_losses));
         row.append(nums);
         list.append(row);
