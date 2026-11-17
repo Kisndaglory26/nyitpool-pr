@@ -237,6 +237,57 @@ async function userInLiveParty(db, userId, excludeId) {
   ).bind(excludeId, userId, userId).first();
 }
 
+/* ---------- team-up requests ---------- */
+/* "Team up" on a waiting open duo with a REGISTERED owner sends a request the
+   owner accepts or declines (2 min TTL, lazy expiry) instead of claiming
+   instantly. Guest-led / blank duos keep the old direct claim — a guest has
+   no session to approve with. The accept path performs the exact old claim
+   (including team-switch detach rules), so nothing else changes. */
+const TEAMUP_TTL_MS = 2 * 60 * 1000;
+
+function expireTeamUps(db) {
+  return db.prepare(
+    "UPDATE team_up_requests SET status = 'expired' WHERE status = 'pending' AND created_at <= ?"
+  ).bind(Date.now() - TEAMUP_TTL_MS).run();
+}
+
+/* the old instant claim: put `user` in the party's open P2 slot, switching
+   teams (detaching from their current party) when they are queued elsewhere.
+   Same split rules as leave: a solo / half-empty old party disbands, otherwise
+   the slot just frees up. */
+async function performClaim(env, user, party) {
+  const elsewhere = await userInLiveParty(env.DB, user.id, party.id);
+  const stmts = [];
+  let switchFrom = null, oldDisbanded = false;
+  if (elsewhere) {
+    const old = await env.DB.prepare('SELECT * FROM queue_parties WHERE id = ?').bind(elsewhere.id).first();
+    const hasP2 = !!(old.p2_user_id || old.p2_guest_name);
+    const leaverIsP1 = old.p1_user_id === user.id;
+    const disband = old.format === 'solo' || !hasP2;
+    switchFrom = old.id;
+    oldDisbanded = disband;
+    if (disband) {
+      stmts.push(env.DB.prepare("UPDATE queue_parties SET status = 'skipped' WHERE id = ?").bind(old.id));
+      stmts.push(env.DB.prepare('DELETE FROM skip_votes WHERE party_id = ?').bind(old.id));
+    } else if (leaverIsP1) {
+      stmts.push(env.DB.prepare(
+        `UPDATE queue_parties SET p1_user_id = p2_user_id, p1_guest_name = p2_guest_name,
+         p2_user_id = NULL, p2_guest_name = NULL WHERE id = ?`
+      ).bind(old.id));
+    } else {
+      stmts.push(env.DB.prepare(
+        'UPDATE queue_parties SET p2_user_id = NULL, p2_guest_name = NULL WHERE id = ?'
+      ).bind(old.id));
+    }
+    stmts.push(env.DB.prepare(
+      'DELETE FROM skip_votes WHERE party_id = ? AND voter_user_id = ?').bind(old.id, user.id));
+  }
+  stmts.push(env.DB.prepare('UPDATE queue_parties SET p2_user_id = ? WHERE id = ?').bind(user.id, party.id));
+  await env.DB.batch(stmts);
+  if (oldDisbanded) await promoteNext(env.DB); // the old party may have freed a table seat
+  return { switched: switchFrom != null, from: switchFrom, oldDisbanded };
+}
+
 /* ============================ audit log ============================ */
 
 async function audit(db, type, actorUserId, detail = '') {
@@ -536,9 +587,38 @@ async function handleApi(request, env, url) {
       PARTY_SELECT + ` WHERE p.status IN ('playing', 'waiting')
                        ORDER BY CASE p.status WHEN 'playing' THEN 0 ELSE 1 END, p.position`
     ).all();
+    // team-up requests: expire stale ones, then surface this caller's popup
+    // (they own a requested duo) and their own sent request, if any
+    await expireTeamUps(env.DB);
+    const user = await currentUser(request, env);
+    let teamupIn = null, teamupOut = null;
+    if (user) {
+      const inRow = await env.DB.prepare(
+        `SELECT r.id, r.party_id, r.created_at, u.id AS requester_id, u.nickname, u.username,
+                u.glicko_rating AS req_elo
+         FROM team_up_requests r
+         JOIN queue_parties p ON p.id = r.party_id
+         JOIN users u ON u.id = r.requester_user_id
+         WHERE r.status = 'pending' AND p.status = 'waiting'
+           AND p.p1_user_id = ? AND p.p2_user_id IS NULL AND p.p2_guest_name IS NULL
+         ORDER BY r.id LIMIT 1`
+      ).bind(user.id).first();
+      if (inRow) teamupIn = {
+        id: inRow.id, party_id: inRow.party_id,
+        created_at: inRow.created_at, expires_at: inRow.created_at + TEAMUP_TTL_MS,
+        requester: { id: inRow.requester_id, nickname: inRow.nickname, username: inRow.username,
+          elo: Math.round(inRow.req_elo) },
+      };
+      const outRow = await env.DB.prepare(
+        `SELECT id, party_id, created_at FROM team_up_requests
+         WHERE requester_user_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1`
+      ).bind(user.id).first();
+      if (outRow) teamupOut = { id: outRow.id, party_id: outRow.party_id,
+        created_at: outRow.created_at, expires_at: outRow.created_at + TEAMUP_TTL_MS };
+    }
     return json({ parties: results.map(shapeParty), mode: eff.mode, override: eff.override, schedule: eff.schedule,
       key_required: !!env.QUEUE_KEY, key_valid: await validQueueKey(request, env),
-      key_ttl_ms: QUEUE_KEY_TTL_MS });
+      key_ttl_ms: QUEUE_KEY_TTL_MS, teamup_in: teamupIn, teamup_out: teamupOut });
   }
 
   if (pathname === '/api/queue/join' && method === 'POST') {
@@ -621,42 +701,20 @@ async function handleApi(request, env, url) {
       return bad('only the creator (or a claiming teammate) can set Player 2', 403);
     }
     if (claiming) {
+      // duos with a registered owner take team-up REQUESTS now — the owner
+      // approves. Guests and blank admin stubs have no session to approve
+      // with, so their open slot stays a direct claim.
+      if (party.p1_user_id != null) {
+        return bad('send a team-up request — the party owner approves joins', 409);
+      }
       // claiming joins this party even when already queued elsewhere — it's a
       // team switch: detach from the old party first (same split rules as leave)
-      const elsewhere = await userInLiveParty(env.DB, user.id, party.id);
-      const stmts = [];
-      let switchFrom = null, oldDisbanded = false;
-      if (elsewhere) {
-        const old = await env.DB.prepare('SELECT * FROM queue_parties WHERE id = ?').bind(elsewhere.id).first();
-        const hasP2 = !!(old.p2_user_id || old.p2_guest_name);
-        const leaverIsP1 = old.p1_user_id === user.id;
-        const disband = old.format === 'solo' || !hasP2;
-        switchFrom = old.id;
-        oldDisbanded = disband;
-        if (disband) {
-          stmts.push(env.DB.prepare("UPDATE queue_parties SET status = 'skipped' WHERE id = ?").bind(old.id));
-          stmts.push(env.DB.prepare('DELETE FROM skip_votes WHERE party_id = ?').bind(old.id));
-        } else if (leaverIsP1) {
-          stmts.push(env.DB.prepare(
-            `UPDATE queue_parties SET p1_user_id = p2_user_id, p1_guest_name = p2_guest_name,
-             p2_user_id = NULL, p2_guest_name = NULL WHERE id = ?`
-          ).bind(old.id));
-        } else {
-          stmts.push(env.DB.prepare(
-            'UPDATE queue_parties SET p2_user_id = NULL, p2_guest_name = NULL WHERE id = ?'
-          ).bind(old.id));
-        }
-        stmts.push(env.DB.prepare(
-          'DELETE FROM skip_votes WHERE party_id = ? AND voter_user_id = ?').bind(old.id, user.id));
-      }
-      stmts.push(env.DB.prepare('UPDATE queue_parties SET p2_user_id = ? WHERE id = ?').bind(user.id, party.id));
-      await env.DB.batch(stmts);
-      if (oldDisbanded) await promoteNext(env.DB); // the old party may have freed a table seat
+      const r = await performClaim(env, user, party);
       await audit(env.DB, 'teammate', user.id,
-        'party=' + party.id + (switchFrom != null
-          ? ' switch-from=' + switchFrom + (oldDisbanded ? ' old-disbanded' : '')
+        'party=' + party.id + (r.switched
+          ? ' switch-from=' + r.from + (r.oldDisbanded ? ' old-disbanded' : '')
           : ' claim'));
-      return json({ ok: true, switched: switchFrom != null, from: switchFrom });
+      return json({ ok: true, switched: r.switched, from: r.from });
     } else if (body?.p2_user_id) {
       const mate = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(Number(body.p2_user_id)).first();
       if (!mate) return bad('teammate not found');
@@ -708,6 +766,80 @@ async function handleApi(request, env, url) {
       return json({ skipped: true, votes: 3 });
     }
     return json({ skipped: false, votes: n });
+  }
+
+  /* ---------- team-up requests (owned duos approve joins) ---------- */
+  m = pathname.match(/^\/api\/queue\/(\d+)\/teamup$/);
+  if (m && method === 'POST') {
+    const user = await requireUser(request, env);
+    await expireTeamUps(env.DB); // lazy 2-minute expiry
+    const party = await env.DB.prepare('SELECT * FROM queue_parties WHERE id = ?').bind(Number(m[1])).first();
+    if (!party) return bad('not found', 404);
+    if (party.format !== 'duo') return bad('solo parties have no teammate slot');
+    if (party.status !== 'waiting') return bad('party already in play');
+    if (party.p2_user_id != null || party.p2_guest_name != null) {
+      return bad('party already has a teammate', 409);
+    }
+    if (party.p1_user_id == null) {
+      return bad('this duo has no registered owner to approve — claim Player 2 directly');
+    }
+    if (party.p1_user_id === user.id) return bad("that's your own party", 409);
+    // one live request per requester (server-enforced)
+    const live = await env.DB.prepare(
+      "SELECT id, party_id FROM team_up_requests WHERE requester_user_id = ? AND status = 'pending' ORDER BY id LIMIT 1"
+    ).bind(user.id).first();
+    if (live) {
+      return bad(live.party_id === party.id
+        ? 'you already have a request pending for this party'
+        : 'you already have a pending team-up request', 409);
+    }
+    const now = Date.now();
+    const { meta } = await env.DB.prepare(
+      "INSERT INTO team_up_requests (party_id, requester_user_id, created_at, status) VALUES (?, ?, ?, 'pending')"
+    ).bind(party.id, user.id, now).run();
+    await audit(env.DB, 'teamup_request', user.id, 'party=' + party.id);
+    return json({ ok: true, id: meta.last_row_id, party_id: party.id, expires_at: now + TEAMUP_TTL_MS }, 201);
+  }
+
+  m = pathname.match(/^\/api\/teamup\/(\d+)\/respond$/);
+  if (m && method === 'POST') {
+    const user = await requireUser(request, env);
+    await expireTeamUps(env.DB); // lazy 2-minute expiry
+    const body = await request.json().catch(() => null);
+    const action = body?.action;
+    if (!['accept', 'decline'].includes(action)) return bad('action must be accept or decline');
+    const tr = await env.DB.prepare('SELECT * FROM team_up_requests WHERE id = ?').bind(Number(m[1])).first();
+    if (!tr) return bad('not found', 404);
+    if (tr.status !== 'pending') {
+      return bad(tr.status === 'expired' ? 'team-up request expired' : `team-up request already ${tr.status}`,
+        tr.status === 'expired' ? 410 : 409);
+    }
+    const party = await env.DB.prepare('SELECT * FROM queue_parties WHERE id = ?').bind(tr.party_id).first();
+    if (!party) return bad('not found', 404);
+    if (party.p1_user_id !== user.id) return bad('only the party owner can respond', 403);
+    if (action === 'decline') {
+      await env.DB.prepare("UPDATE team_up_requests SET status = 'declined' WHERE id = ?").bind(tr.id).run();
+      await audit(env.DB, 'teamup_decline', user.id, 'request=' + tr.id + ' party=' + party.id);
+      return json({ ok: true, declined: true });
+    }
+    // accept: the party may have filled or started while the request sat there
+    if (party.status !== 'waiting') {
+      await env.DB.prepare("UPDATE team_up_requests SET status = 'expired' WHERE id = ?").bind(tr.id).run();
+      return bad('party already in play', 409);
+    }
+    if (party.p2_user_id != null || party.p2_guest_name != null) {
+      await env.DB.prepare("UPDATE team_up_requests SET status = 'expired' WHERE id = ?").bind(tr.id).run();
+      return bad('party already has a teammate', 409);
+    }
+    const requester = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(tr.requester_user_id).first();
+    if (!requester) return bad('requester account no longer exists', 410);
+    // the accept performs the exact old claim — same switch/detach rules
+    const r = await performClaim(env, requester, party);
+    await env.DB.prepare("UPDATE team_up_requests SET status = 'accepted' WHERE id = ?").bind(tr.id).run();
+    await audit(env.DB, 'teamup_accept', user.id,
+      'request=' + tr.id + ' party=' + party.id + ' player=' + tr.requester_user_id
+      + (r.switched ? ' switch-from=' + r.from + (r.oldDisbanded ? ' old-disbanded' : '') : ''));
+    return json({ ok: true, switched: r.switched, from: r.from });
   }
 
   m = pathname.match(/^\/api\/queue\/(\d+)$/);
