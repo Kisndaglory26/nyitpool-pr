@@ -98,6 +98,11 @@ async function validQueueKey(request, env) {
   return b64url(a) === b64url(b);
 }
 
+/* How long a scanned QR key stays valid, counted from the scan on that device.
+   The secret is static, so the window is per-browser (memory-only): the server
+   advertises the TTL here and the client enforces the countdown. */
+const QUEUE_KEY_TTL_MS = 30 * 60 * 1000;
+
 class HttpError extends Error {
   constructor(status, msg) { super(msg); this.status = status; }
 }
@@ -515,7 +520,8 @@ async function handleApi(request, env, url) {
                        ORDER BY CASE p.status WHEN 'playing' THEN 0 ELSE 1 END, p.position`
     ).all();
     return json({ parties: results.map(shapeParty), mode: eff.mode, override: eff.override, schedule: eff.schedule,
-      key_required: !!env.QUEUE_KEY, key_valid: await validQueueKey(request, env) });
+      key_required: !!env.QUEUE_KEY, key_valid: await validQueueKey(request, env),
+      key_ttl_ms: QUEUE_KEY_TTL_MS });
   }
 
   if (pathname === '/api/queue/join' && method === 'POST') {
