@@ -1618,7 +1618,7 @@ const Hub = (() => {
     joinCard.classList.toggle('locked', locked);
     const note = document.getElementById('qr-note');
     note.hidden = !locked;
-    if (locked) note.textContent = 'Key lasts 30 min after scanning — rescan the table QR code.';
+    if (locked) note.textContent = '📲 Scan the table QR code to join the queue (key lasts 30 min after scanning).';
     $('#join-mate').disabled = $('#join-guest').disabled = joinBtn.disabled;
     const wantSolo = segVal($('#join-format')) === 'solo';
     $('#join-mate').closest('.pick-slot').hidden = wantSolo; // hide the slot, not just the input
