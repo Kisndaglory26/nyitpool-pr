@@ -1,5 +1,5 @@
 /**
- * Glicko-2 rating engine — NYIT Pool.
+ * Glicko-2 rating engine — BearBreak.
  * Reference: Mark Glickman, "Example of the Glicko-2 system" (http://www.glicko.net/glicko/glicko2.pdf)
  *
  * Parameters: tau = 0.5, scale = 173.7178.

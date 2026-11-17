@@ -4,9 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
-<meta name="description" content="Shot-timer and chess-clock game timer for the NYIT billiards table. Keyboard-first, touch-friendly, single file.">
-<title>NYIT Pool</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Ccircle%20cx='32'%20cy='32'%20r='30'%20fill='%23101418'/%3E%3Ccircle%20cx='32'%20cy='32'%20r='14'%20fill='%23ffffff'/%3E%3Ctext%20x='32'%20y='38'%20font-size='19'%20font-family='Arial'%20font-weight='bold'%20text-anchor='middle'%20fill='%23101418'%3E8%3C/text%3E%3C/svg%3E">
+<meta name="description" content="BearBreak — shot clocks, game clocks and the live table queue for the NYIT billiards table.">
+<title>BearBreak</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root{
     --bg:#080c10;
@@ -95,16 +96,7 @@
   .brand{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:34px 8px 6px}
   .brand h1{margin:0;font-size:clamp(1.9rem,7vw,2.6rem);letter-spacing:-.015em}
   .brand p{margin:0;color:var(--muted);max-width:34ch}
-  .ball8{
-    width:58px;height:58px;border-radius:50%;
-    background:radial-gradient(circle at 34% 30%, #3a4a58, #10181f 62%);
-    border:2px solid #2a3946;display:grid;place-items:center;
-    box-shadow:0 14px 30px -14px #000;
-  }
-  .ball8 span{
-    width:30px;height:30px;border-radius:50%;background:#fff;color:#0a0f13;
-    display:grid;place-items:center;font-weight:900;font-size:1rem;
-  }
+  .brand-logo{width:84px;height:84px;border-radius:20px;box-shadow:0 14px 30px -14px #000}
   .modegrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .modecard{
     border:1px solid var(--line);border-radius:var(--r-xl);padding:22px 16px;
@@ -783,8 +775,8 @@
   <section id="screen-home" class="screen active">
     <div class="solo-col">
       <header class="brand">
-        <div class="ball8" aria-hidden="true"><span>8</span></div>
-        <h1>NYIT Pool</h1>
+        <img class="brand-logo" src="logo.svg" alt="" width="84" height="84">
+        <h1>BearBreak</h1>
         <p>Shot clocks, game banks and the live table queue for the NYIT billiards table.</p>
       </header>
       <div class="modegrid">
@@ -807,7 +799,7 @@
   <section id="screen-modesel" class="screen">
     <div class="solo-col">
       <div class="topbar">
-        <button id="btn-modesel-back" class="btn ghost tiny" type="button">← NYIT Pool</button>
+        <button id="btn-modesel-back" class="btn ghost tiny" type="button">← BearBreak</button>
         <h2>Pick your timer</h2>
       </div>
       <div class="modegrid">
@@ -829,7 +821,7 @@
   <section id="screen-queue" class="screen">
     <div class="hub-wrap">
       <div class="topbar">
-        <button id="btn-queue-back" class="btn ghost tiny" type="button">← NYIT Pool</button>
+        <button id="btn-queue-back" class="btn ghost tiny" type="button">← BearBreak</button>
         <h2>Table Queue</h2>
         <span class="spacer"></span>
         <button id="hub-user" class="hub-user btn-ghost" type="button" hidden style="border-radius:999px"></button>
