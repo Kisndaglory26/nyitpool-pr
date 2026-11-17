@@ -2030,7 +2030,9 @@ const Hub = (() => {
         row.append(nm);
         const nums = el('div', 'nums');
         nums.append(el('div', 'elo', String(Math.round(u.glicko_rating))));
-        nums.append(el('small', null, 'RD ' + Math.round(u.glicko_rd) + ' · C ' + u.casual_wins + '–' + u.casual_losses));
+        nums.append(el('small', null, games < 5
+          ? 'RD ' + Math.round(u.glicko_rd) + ' · ' + (5 - games) + ' placement game' + (5 - games === 1 ? '' : 's') + ' left'
+          : 'RD ' + Math.round(u.glicko_rd) + ' · C ' + u.casual_wins + '–' + u.casual_losses));
         row.append(nums);
         list.append(row);
       });

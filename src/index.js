@@ -1004,10 +1004,14 @@ async function handleApi(request, env, url) {
 
   /* ---------- leaderboard & history ---------- */
   if (pathname === '/api/leaderboard' && method === 'GET') {
+    // Placement players (<5 ranked games) sort below every placed player,
+    // even with a higher rating; each group is ordered by rating DESC.
     const { results } = await env.DB.prepare(
       `SELECT id, username, nickname, glicko_rating, glicko_rd,
               ranked_wins, ranked_losses, casual_wins, casual_losses
-       FROM users ORDER BY glicko_rating DESC LIMIT 50`
+       FROM users
+       ORDER BY (ranked_wins + ranked_losses) >= 5 DESC, glicko_rating DESC
+       LIMIT 50`
     ).all();
     return json({ leaderboard: results });
   }
