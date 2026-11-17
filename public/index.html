@@ -200,6 +200,42 @@
   .pane{display:none;flex-direction:column;gap:12px}
   .pane.on{display:flex}
 
+  /* feedback fab + bottom sheet (hub only) */
+  .fab-feedback{
+    position:fixed;right:14px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:41;
+    width:48px;height:48px;border-radius:50%;
+    background:linear-gradient(180deg,var(--panel3),var(--panel2));
+    border:1px solid var(--line2);font-size:1.2rem;line-height:1;
+    box-shadow:var(--shadow);display:grid;place-items:center;transition:.15s;
+  }
+  .fab-feedback:hover{border-color:#3a4f64}
+  .fab-feedback:active{transform:scale(.94)}
+  #feedback-sheet{
+    position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;
+    background:rgba(5,8,12,.72);backdrop-filter:blur(5px);
+    opacity:0;visibility:hidden;transition:.25s;
+  }
+  #feedback-sheet.show{opacity:1;visibility:visible}
+  #feedback-sheet .fs-card{
+    width:100%;max-width:680px;background:var(--panel);
+    border:1px solid var(--line2);border-bottom:none;border-radius:var(--r-xl) var(--r-xl) 0 0;
+    padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;gap:12px;
+    transform:translateY(14px);transition:.25s;
+  }
+  #feedback-sheet.show .fs-card{transform:none}
+  .fs-head{display:flex;align-items:center;gap:10px}
+  .fs-head h3{margin:0;font-size:1.05rem;flex:1}
+  .fs-opt{
+    display:flex;align-items:center;gap:12px;text-align:left;
+    border:1px solid var(--line2);border-radius:var(--r-md);padding:13px 14px;
+    background:var(--panel3);transition:.15s;
+  }
+  .fs-opt:hover{border-color:#3a4f64}
+  .fs-opt .ic{font-size:1.35rem;line-height:1}
+  .fs-opt b{display:block;font-size:.95rem}
+  .fs-opt small{color:var(--muted);font-size:.78rem}
+
   /* queue: join card + QR lock */
   .joincard{display:flex;flex-direction:column;gap:9px;position:relative;overflow:hidden}
   .joincard .row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px} /* zero-min tracks: long typed values can't blow out the grid */
@@ -935,6 +971,25 @@
         </nav>
       </div>
     </div>
+
+    <button id="fab-feedback" class="fab-feedback" type="button" title="Feedback" aria-haspopup="dialog">📝</button>
+
+    <div id="feedback-sheet" role="dialog" aria-modal="true" aria-labelledby="fs-title">
+      <div class="fs-card">
+        <div class="fs-head">
+          <h3 id="fs-title">Feedback</h3>
+          <button id="fs-close" class="btn ghost tiny" type="button" aria-label="Close feedback sheet">✕</button>
+        </div>
+        <button class="fs-opt" id="fs-form" type="button">
+          <span class="ic" aria-hidden="true">📝</span>
+          <span><b>Google Form</b><small>Quick feedback — opens in a new tab</small></span>
+        </button>
+        <button class="fs-opt" id="fs-issue" type="button">
+          <span class="ic" aria-hidden="true">🐙</span>
+          <span><b>GitHub issue</b><small>Bug reports &amp; feature requests — opens in a new tab</small></span>
+        </button>
+      </div>
+    </div>
   </section>
 
   <!-- ============ Screen 1d: admin page ============ -->
@@ -1090,6 +1145,11 @@
 
 <script>
 'use strict';
+
+/* ============================== config ============================== */
+// T4 feedback links. Google Form share URL provided by the user (2026-11-17).
+const FEEDBACK_FORM_URL = 'https://forms.gle/3Wt8kFwfwBrB6DAt7';
+const GITHUB_ISSUES_URL = 'https://github.com/silverftw/nyitpool/issues/new';
 
 /* ============================== helpers ============================== */
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -1448,6 +1508,26 @@ const Hub = (() => {
       msg.textContent = '✓ Recalculated ' + r.users + ' players';
       await AdminPage.refresh();
     } catch (ex) { msg.textContent = ex.message; }
+  });
+
+  /* ---------- feedback sheet (fab) ---------- */
+  const fsSheet = $('#feedback-sheet');
+  function closeFeedbackSheet() { fsSheet.classList.remove('show'); }
+  $('#fab-feedback').addEventListener('click', () => {
+    fsSheet.classList.add('show');
+    $('#fs-close').focus();
+  });
+  $('#fs-close').addEventListener('click', closeFeedbackSheet);
+  fsSheet.addEventListener('click', e => { if (e.target === fsSheet) closeFeedbackSheet(); }); // backdrop tap
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFeedbackSheet(); });
+  $('#fs-form').addEventListener('click', () => {
+    if (!FEEDBACK_FORM_URL) { alert('Feedback form link not set yet — coming soon.'); return; }
+    window.open(FEEDBACK_FORM_URL, '_blank', 'noopener');
+    closeFeedbackSheet();
+  });
+  $('#fs-issue').addEventListener('click', () => {
+    window.open(GITHUB_ISSUES_URL, '_blank', 'noopener');
+    closeFeedbackSheet();
   });
 
   /* ---------- tabs (bottom nav) ---------- */
