@@ -309,6 +309,26 @@
   .skip3 i.f{background:var(--warn)}
   .skip3:disabled{opacity:.35;cursor:default}
 
+  /* team-up request popup: floats over the queue pane until the owner responds
+     (lives inside the pane, so other tabs hide it for free); right edge clears
+     the feedback fab */
+  #teamup-pop{
+    position:fixed;left:12px;right:74px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:44;
+    max-width:656px;margin:0 auto;display:none;align-items:center;gap:11px;
+    background:linear-gradient(180deg,color-mix(in srgb,var(--felt) 16%,transparent),transparent 74%),var(--panel);
+    border:1px solid color-mix(in srgb,var(--felt) 50%,var(--line));
+    border-radius:var(--r-lg);padding:12px 13px;box-shadow:var(--shadow);
+  }
+  #teamup-pop.show{display:flex}
+  #teamup-pop .tav{
+    flex-shrink:0;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
+    font-weight:900;background:var(--felt);color:var(--feltink);
+  }
+  #teamup-pop .twho{flex:1;min-width:0}
+  #teamup-pop .twho b{display:block;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #teamup-pop .twho small{display:block;color:var(--muted);font-size:.74rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #teamup-pop .tbtns{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+
   /* log: team boxes + history rows */
   .teambox{border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;background:var(--panel2)}
   .teambox .lbl{font-size:.64rem;font-weight:900;letter-spacing:.16em;color:var(--tc,var(--muted));text-transform:uppercase;margin-bottom:8px;display:block}
@@ -872,7 +892,8 @@
 
           <div id="hub-playing" hidden></div>
           <div id="hub-list"></div>
-          <p class="fine" style="text-align:center;margin:2px 0 0">3 votes skips a party · tap Team up to claim an open duo slot</p>
+          <div id="teamup-pop" role="alertdialog" aria-label="Team-up request"></div>
+          <p class="fine" style="text-align:center;margin:2px 0 0">3 votes skips a party · Team up sends a join request to an open duo's owner</p>
         </div>
 
         <!-- LOG PANE -->
@@ -948,6 +969,7 @@
           <details class="card changelog">
             <summary>✨ What's new</summary>
             <div style="display:flex;flex-direction:column;gap:7px;margin-top:10px">
+              <div class="cl-item"><span class="chip">PR34</span><span>Team up is now a request — duo owners accept or decline</span></div>
               <div class="cl-item"><span class="chip">PR22</span><span>Shot timer: per-rack extension button + New Rack</span></div>
               <div class="cl-item"><span class="chip">PR21</span><span>Only ranked matches move ratings; fairer rating baseline</span></div>
               <div class="cl-item"><span class="chip">PR20</span><span>Casual vs ranked match toggle + global rating recalculation</span></div>
@@ -1610,6 +1632,10 @@ const Hub = (() => {
 
   /* ---------- tab 1: live queue ---------- */
   let parties = [];
+  let teamupIn = null;      // a request waiting on ME (I own the duo) -> popup
+  let teamupOut = null;     // MY pending request -> "request sent…" on the row
+  let teamupSentAt = 0;     // client-side 5s resend cool-down
+  let teamupPopId = null;   // popup DOM rebuilt only when the request id changes
   let qKey = { required: false, valid: true };
   let qMode = { mode: 'open', override: null, schedule: { open: '09:00', duo_start: '12:00', duo_end: '18:00', close: '21:00' } };
   const fmt12 = hhmm => {
@@ -1625,6 +1651,8 @@ const Hub = (() => {
       qMode = { mode: r.mode, override: r.override, schedule: r.schedule || qMode.schedule };
       qKey = { required: !!r.key_required, valid: r.key_valid !== false };
       if (r.key_ttl_ms) keyTtlMs = r.key_ttl_ms; // server owns the TTL
+      teamupIn = r.teamup_in || null;
+      teamupOut = r.teamup_out || null;
     } catch { parties = null; }
     renderQueue();
   }
@@ -1715,8 +1743,46 @@ const Hub = (() => {
     return b;
   }
 
+  /* team-up popup: the duo owner sees it on the queue tab until they respond
+     (or the request expires server-side and the next poll clears it). The DOM
+     is rebuilt only when a different request id arrives, so a click can't be
+     lost to a mid-poll re-render. */
+  function renderTeamupPop() {
+    const pop = $('#teamup-pop');
+    const live = teamupIn;
+    if (!live) { pop.classList.remove('show'); teamupPopId = null; return; }
+    if (live.id !== teamupPopId) {
+      teamupPopId = live.id;
+      pop.innerHTML = '';
+      pop.append(el('span', 'tav', (live.requester.nickname || '?').trim().charAt(0).toUpperCase()));
+      const who = el('div', 'twho');
+      who.append(el('b', null, live.requester.nickname));
+      who.append(el('small', null, 'wants to team up with you'));
+      who.append(el('small', 'texp', ''), el('small', null,
+        '@' + live.requester.username + ' · ' + live.requester.elo));
+      pop.append(who);
+      const btns = el('div', 'tbtns');
+      btns.append(actBtn('Accept', async () => {
+        await api('/teamup/' + live.id + '/respond', { method: 'POST', body: { action: 'accept' } });
+        refreshAll();
+      }, 'Accept team-up request', 'btn primary tiny'));
+      btns.append(actBtn('Decline', async () => {
+        await api('/teamup/' + live.id + '/respond', { method: 'POST', body: { action: 'decline' } });
+        refreshAll();
+      }, 'Decline team-up request', 'btn tiny'));
+      pop.append(btns);
+    }
+    const left = Math.max(0, live.expires_at - Date.now());
+    const mm = Math.floor(left / 60000), ss = Math.floor((left % 60000) / 1000);
+    $('.texp', pop).textContent = left > 0
+      ? `expires in ${mm}:${String(ss).padStart(2, '0')}`
+      : 'expiring…';
+    pop.classList.add('show');
+  }
+
   function renderQueue() {
     renderHours();
+    renderTeamupPop();
     const playing = parties ? parties.filter(p => p.status === 'playing') : [];
     const waiting = parties ? parties.filter(p => p.status === 'waiting') : [];
     const nowBox = $('#hub-playing');
@@ -1813,10 +1879,27 @@ const Hub = (() => {
           refreshAll();
         }, null, 'btn tiny danger'));
       } else if (!p.p2 && p.format === 'duo' && me && !me.guest) {
-        side.append(actBtn('Team up', async () => {
-          await api('/queue/' + p.id + '/teammate', { method: 'PATCH', body: {} });
-          refreshAll();
-        }, null, 'btn tiny'));
+        if (teamupOut && teamupOut.party_id === p.id) {
+          side.append(el('span', 'chip ok', 'REQUEST SENT…')); // waiting on the owner
+        } else if (p.p1 && p.p1.registered) {
+          // owned duo: a request the owner approves, not an instant claim
+          const b = actBtn('Team up', async () => {
+            teamupSentAt = Date.now();
+            await api('/queue/' + p.id + '/teamup', { method: 'POST' });
+            refreshAll();
+          }, 'Ask the duo owner to team up', 'btn tiny');
+          if (Date.now() - teamupSentAt < 5000) { // client-side resend cool-down
+            b.disabled = true;
+            b.title = 'Wait a few seconds between requests';
+          }
+          side.append(b);
+        } else {
+          // guest-led / blank duo — no owner to approve: direct claim, as before
+          side.append(actBtn('Team up', async () => {
+            await api('/queue/' + p.id + '/teammate', { method: 'PATCH', body: {} });
+            refreshAll();
+          }, null, 'btn tiny'));
+        }
       }
       row.append(side);
       list.append(row);
