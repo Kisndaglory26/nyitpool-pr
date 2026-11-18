@@ -665,6 +665,7 @@
     border:1px solid var(--line);border-radius:999px;padding:4px 12px;
   }
   .panel.active .chip{color:var(--tc);border-color:var(--tc)}
+  .panel.active .chip.foul{color:var(--danger);border-color:var(--danger)}
   .panel.active .chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 55%,var(--line2))}
   .tname{font-size:clamp(1rem,2.4vmin,1.5rem);font-weight:800;color:var(--muted);letter-spacing:.03em}
   .roster{
@@ -1244,7 +1245,17 @@ const ScreenLock = (() => {
 })();
 
 /* ==================== settings (session-only — nothing persists in the browser) ==================== */
-const DEFAULT_SETTINGS = { names: ['Team 1', 'Team 2'], rosters: [['', ''], ['', '']], shot: [60, 60], game: [6, 6] };
+/* shot-clock rule presets: seconds per shot + one extension per team per rack */
+const SHOT_PRESETS = [
+  { id: 'wpa', label: 'WPA', shot: 35, ext: 25, note: 'World Pool-Billiard Association recommendation' },
+  { id: 'pro', label: 'Pro', shot: 30, ext: 30, note: 'Pro events (Predator Pro Billiard Series, WPA World 8-Ball)' },
+];
+const DEFAULT_SHOT_PRESET = 'wpa';
+const shotPreset = id => SHOT_PRESETS.find(p => p.id === id) || SHOT_PRESETS[0];
+const DEFAULT_SETTINGS = {
+  names: ['Team 1', 'Team 2'], rosters: [['', ''], ['', '']],
+  shotPreset: [DEFAULT_SHOT_PRESET, DEFAULT_SHOT_PRESET], shot: [35, 35], ext: [25, 25], game: [6, 6],
+};
 const settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 
 /* ==================== app + match state ==================== */
@@ -1254,8 +1265,6 @@ const match = {
   dur: [0, 0], remaining: [0, 0], seg: [0, 0], endAt: 0, winner: null, lastBeepSec: null,
   extUsed: [false, false], // shot mode: one extension per team per rack
 };
-/* shot-clock extension length (pro events: 30s; WPA recommends 25s) */
-const EXT_SEC = 30;
 let rafId = 0;
 
 const durMsFor = i => (app.mode === 'shot' ? settings.shot[i] * 1000 : settings.game[i] * 60000);
@@ -2461,11 +2470,16 @@ const Hub = (() => {
 /* ==================== screen 2: config / handicaps ==================== */
 function modeUnits() {
   if (app.mode === 'shot') {
+    // rule presets only — each sets seconds per shot AND the extension length
     return {
-      min: 1, max: 99, step: 5, presets: [30, 45, 60, 90], rec: 60,
-      get: i => settings.shot[i], set: (i, v) => { settings.shot[i] = v; },
-      fmtBig: v => `${v}s`, unitWord: 'per shot',
-      label: 'Seconds per shot', chipFmt: v => `${v}s`,
+      presetMode: true,
+      get: i => settings.shotPreset[i],
+      set: (i, id) => {
+        const pr = shotPreset(id);
+        settings.shotPreset[i] = pr.id; settings.shot[i] = pr.shot; settings.ext[i] = pr.ext;
+      },
+      fmtBig: id => `${shotPreset(id).shot}s`,
+      unitFor: id => `per shot · +${shotPreset(id).ext}s extension`,
     };
   }
   return {
@@ -2535,16 +2549,37 @@ function teamCard(i) {
 
   const big = el('div', 'bigval mono');
   const bigNum = el('span');
-  big.append(bigNum, el('span', 'unit', u.unitWord));
+  const bigUnit = el('span', 'unit', u.presetMode ? '' : u.unitWord);
+  big.append(bigNum, bigUnit);
 
   const chips = el('div', 'chips');
   const num = document.createElement('input');
   const refresh = syncInput => {
     const v = u.get(i);
     bigNum.textContent = u.fmtBig(v);
+    if (u.presetMode) {
+      bigUnit.textContent = u.unitFor(v);
+      $$('.pchip', chips).forEach(c => c.classList.toggle('on', c.dataset.v === v));
+      return;
+    }
     if (syncInput !== false) num.value = v;
     $$('.pchip', chips).forEach(c => c.classList.toggle('on', Number(c.dataset.v) === v));
   };
+  if (u.presetMode) {
+    SHOT_PRESETS.forEach(pr => {
+      const c = el('button', 'pchip', `${pr.label} · ${pr.shot}s + ${pr.ext}s ext`);
+      c.type = 'button';
+      c.dataset.v = pr.id;
+      c.title = pr.note;
+      if (pr.id === DEFAULT_SHOT_PRESET) c.append(el('span', 'rec', 'RECOMMENDED'));
+      c.addEventListener('click', () => { u.set(i, pr.id); refresh(); });
+      chips.appendChild(c);
+    });
+    body.append(nameInput, roster, big, chips);
+    card.append(head, body);
+    refresh();
+    return card;
+  }
   u.presets.forEach(p => {
     const c = el('button', 'pchip', u.chipFmt(p));
     c.type = 'button';
@@ -2630,7 +2665,7 @@ function renderRules() {
       step(3, 'All balls stopped?' +
         '<span class="sub">• Missed — <kbd>SPACE</kbd> passes the turn.</span>' +
         '<span class="sub">• Scored — <kbd>ENTER</kbd> resets the clock; same shooter continues.</span>'),
-      step(4, `Need more time? <kbd>E</kbd> adds ${EXT_SEC}s — one extension per team per rack.` +
+      step(4, `Need more time? <kbd>E</kbd> adds ${settings.ext[0] === settings.ext[1] ? settings.ext[0] + 's' : settings.ext[0] + 's / ' + settings.ext[1] + 's'} — one extension per team per rack.` +
         '<span class="sub">• Rack over? <kbd>N</kbd> starts a new rack and restores both extensions.</span>'),
     );
   } else {
@@ -2643,7 +2678,7 @@ function renderRules() {
 
   const size = i => `${settings.rosters[i].length}p`;
   $('#rules-summary').textContent = shot
-    ? `${settings.shot[0]}s / ${settings.shot[1]}s · ${size(0)} / ${size(1)}`
+    ? `${shotPreset(settings.shotPreset[0]).label} ${settings.shot[0]}s+${settings.ext[0]}s / ${shotPreset(settings.shotPreset[1]).label} ${settings.shot[1]}s+${settings.ext[1]}s · ${size(0)} / ${size(1)}`
     : `${settings.game[0]}:00 / ${settings.game[1]}:00 · ${size(0)} / ${size(1)}`;
 }
 
@@ -2712,7 +2747,7 @@ function onExpire() {
     match.seg[match.active] = match.dur[match.active];
     match.violPause = true; // SPACE should resume the incoming shooter, not pass again
     match.lastBeepSec = null;
-    showBanner(`Shot-clock violation — ${violator}. ${settings.names[match.active]} is up: press SPACE to resume.`);
+    showBanner(`FOUL — BALL IN HAND · ${violator} ran out of time. ${settings.names[match.active]} has ball in hand: press SPACE to resume.`);
     pauseGlowRed();
     renderAll();
   }
@@ -2777,7 +2812,7 @@ function actionResetShot() {
   renderAll();
 }
 
-/* E — shot mode: the shooter's one extension this rack adds EXT_SEC to the current shot.
+/* E — shot mode: the shooter's one extension this rack adds their preset's extension to the current shot.
    Works while running or paused (doesn't change pause state). ENTER/SPACE afterwards
    give a normal fresh clock, so the extra time only applies to this shot. */
 function actionExtension() {
@@ -2789,12 +2824,13 @@ function actionExtension() {
   }
   snapshotActive();
   match.extUsed[i] = true;
-  match.remaining[i] += EXT_SEC * 1000;
+  const extSec = settings.ext[i];
+  match.remaining[i] += extSec * 1000;
   if (match.running) runActive(); // recompute endAt with the added time
   match.lastBeepSec = null;
   Sound.resetShot();
   flashPanel(i);
-  showBanner(`Extension — ${settings.names[i]} +${EXT_SEC}s`);
+  showBanner(`Extension — ${settings.names[i]} +${extSec}s`);
   renderAll();
 }
 
@@ -2948,9 +2984,10 @@ function renderClocks() {
     chip.textContent = match.over
       ? (match.winner === i ? 'WINNER' : 'OUT OF TIME')
       : isActive
-        ? (match.running ? 'ON CLOCK' : (match.started ? 'PAUSED' : 'TO BREAK'))
+        ? (match.running ? 'ON CLOCK' : (match.violPause ? 'BALL IN HAND' : (match.started ? 'PAUSED' : 'TO BREAK')))
         : 'WAITING';
     chip.classList.toggle('ok', isActive && !match.over && match.running);
+    chip.classList.toggle('foul', isActive && !match.over && match.violPause);
   });
 }
 
@@ -2971,7 +3008,7 @@ function renderAll() {
   // extension + new-rack controls (shot mode only)
   const shot = app.mode === 'shot';
   $$('.shot-only').forEach(b => { b.hidden = !shot; });
-  $('.bl', $('#btn-ext')).textContent = `+${EXT_SEC}s EXTENSION`;
+  $('.bl', $('#btn-ext')).textContent = `+${settings.ext[match.active]}s EXTENSION`;
   $('#btn-ext').disabled = !match.started || match.over || match.extUsed[match.active];
   $('#btn-new-rack').disabled = !match.started || match.over;
   $('#timer-mode-badge').textContent = app.mode === 'shot' ? 'SHOT TIMER' : 'GAME TIMER';
@@ -2989,7 +3026,7 @@ function renderAll() {
 
   $('.bl', $('#btn-shot-reset')).textContent = app.mode === 'shot' ? 'RESET SHOT' : 'RESET TURN';
   $('#btn-pause').disabled = !match.started || match.over;
-  $('#btn-pause').textContent = match.running ? '▶ Resume' : '⏸ Pause';
+  $('#btn-pause').textContent = (match.running || !match.started) ? '⏸ Pause' : '▶ Resume';
   $('.bl', $('#btn-pass')).textContent = !match.started ? 'START MATCH' : (match.running ? 'PASS TURN' : 'RESUME');
 
   const hint = $('#prestart-hint');
