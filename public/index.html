@@ -2120,7 +2120,7 @@ const Hub = (() => {
         b.append(document.createTextNode(u.nickname + ' '));
         b.append(el('span', 'tier' + (t === 'Placement' ? ' grey' : ''), t));
         nm.append(b);
-        nm.append(el('small', null, '@' + u.username + ' · R ' + u.ranked_wins + '–' + u.ranked_losses));
+        nm.append(el('small', null, '@' + u.username));
         row.append(nm);
         const nums = el('div', 'nums');
         const elo = el('div', 'elo', String(Math.round(u.glicko_rating)) + ' ');
@@ -2128,7 +2128,7 @@ const Hub = (() => {
         nums.append(elo);
         nums.append(el('small', null, games < 10
           ? (10 - games) + ' placement game' + (10 - games === 1 ? '' : 's') + ' left'
-          : 'C ' + u.casual_wins + '–' + u.casual_losses));
+          : 'R ' + u.ranked_wins + '–' + u.ranked_losses));
         row.append(nums);
         list.append(row);
       });
