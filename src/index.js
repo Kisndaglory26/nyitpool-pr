@@ -1,5 +1,5 @@
 /**
- * NYIT Pool — Cloudflare Worker.
+ * BearBreak — Cloudflare Worker.
  *
  *   /api/*  -> auth, queue parties, skip votes, match confirmation, leaderboard
  *   *       -> static assets (public/)
